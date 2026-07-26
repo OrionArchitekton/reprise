@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reprise thumbnail</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#21262d; --text:#e6edf3;
+          --dim:#8b949e; --green:#3fb950; --amber:#d29922; --blue:#58a6ff;
+          --mono: ui-monospace, "SF Mono", Menlo, monospace; }
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1280px; height: 720px; background:
+         radial-gradient(1100px 620px at 12% -10%, #16202c 0%, var(--bg) 62%);
+         color: var(--text); font: 16px/1.4 "Helvetica Neue", Arial, sans-serif;
+         padding: 62px 68px; display: flex; flex-direction: column;
+         justify-content: space-between; overflow: hidden; }
+  .kicker { color: var(--dim); font-family: var(--mono); font-size: 19px;
+            letter-spacing: 2.4px; text-transform: uppercase; }
+  h1 { font-size: 82px; line-height: 0.98; letter-spacing: -2.6px; margin: 16px 0 10px; }
+  h1 em { font-style: normal; color: var(--green); }
+  .sub { color: var(--dim); font-size: 27px; max-width: 830px; }
+  .ladder { display: flex; gap: 14px; margin-top: 30px; }
+  .rung { background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+          padding: 16px 20px; min-width: 246px; }
+  .rung .v { font-family: var(--mono); font-size: 15px; letter-spacing: 2px;
+             text-transform: uppercase; }
+  .rung .t { font-size: 21px; margin-top: 5px; font-weight: 600; }
+  .rung .n { color: var(--dim); font-family: var(--mono); font-size: 14px; margin-top: 3px; }
+  .reuse  { border-left: 6px solid var(--green); } .reuse .v  { color: var(--green); }
+  .review { border-left: 6px solid var(--amber); } .review .v { color: var(--amber); }
+  .gen    { border-left: 6px solid var(--blue); }  .gen .v    { color: var(--blue); }
+  footer { display: flex; align-items: baseline; gap: 22px; color: var(--dim);
+           font-family: var(--mono); font-size: 18px; }
+  footer b { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div>
+    <div class="kicker">Backblaze Generative Media Hackathon</div>
+    <h1>Check what you<br>already <em>generated</em>.</h1>
+    <p class="sub">A reuse-first gateway in front of Genblaze. Your B2 bucket
+    stops being an archive and starts being memory.</p>
+  </div>
+
+  <div class="ladder">
+    <div class="rung reuse">
+      <div class="v">reuse</div>
+      <div class="t">Serve it from B2</div>
+      <div class="n">exact, or 0.97 and above</div>
+    </div>
+    <div class="rung review">
+      <div class="v">review</div>
+      <div class="t">A human decides</div>
+      <div class="n">0.85 to 0.97</div>
+    </div>
+    <div class="rung gen">
+      <div class="v">generate</div>
+      <div class="t">Only now do you pay</div>
+      <div class="n">below 0.85</div>
+    </div>
+  </div>
+
+  <footer>
+    <span><b>0 / 17</b> dangerous pairs auto-reused</span>
+    <span><b>Object Lock</b> decision ledger</span>
+    <span><b>reprise-murex.vercel.app</b></span>
+  </footer>
+</body>
+</html>

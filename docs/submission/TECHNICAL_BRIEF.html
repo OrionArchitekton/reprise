@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reprise: technical brief</title>
+<style>
+  @page { size: letter; margin: 11mm; }
+  body { font: 9pt/1.32 "Helvetica Neue", Arial, sans-serif; color: #14181d; margin: 0; }
+  h1 { font-size: 17pt; margin: 0 0 2pt; letter-spacing: -0.4pt; }
+  .sub { color: #5b6672; font-size: 9.5pt; margin: 0 0 7pt; }
+  h2 { font-size: 10pt; margin: 8pt 0 3pt; border-bottom: 1px solid #d8dee5; padding-bottom: 2pt; }
+  p, li { margin: 3pt 0; }
+  ul { margin: 3pt 0 3pt 14pt; padding: 0; }
+  code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 8.2pt; }
+  pre { background: #f4f6f8; border: 1px solid #e2e8ee; border-radius: 4px;
+        padding: 5pt 7pt; font-size: 7.8pt; line-height: 1.35; overflow: hidden; margin: 5pt 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 8pt; margin: 4pt 0; }
+  th, td { border: 1px solid #d8dee5; padding: 3pt 6pt; text-align: left; }
+  th { background: #f4f6f8; }
+  .two { display: flex; gap: 14pt; }
+  .two > div { flex: 1; }
+  .note { color: #5b6672; font-size: 9pt; }
+  .pagebreak { page-break-before: always; }
+  a { color: #14181d; }
+</style>
+</head>
+<body>
+
+<h1>Reprise</h1>
+<p class="sub">Check what you already generated before you pay to generate it again.
+Backblaze Generative Media Hackathon 2026.</p>
+
+<h2>The problem</h2>
+<p>Generative media teams pay twice for the same asset. The same product shot, the same
+jingle, weeks apart, requested by people who had no way to know it already existed. The
+bucket holding those assets is treated as an archive. Reprise treats it as the opposite:
+an asset that appreciates, placed in the request path so that owning something is checked
+before paying for it again.</p>
+
+<h2>Decision model</h2>
+<pre>prompt -> exact match?  ---- yes -> REUSE    serve from B2, $0, saving booked
+            | no
+          embed + score the library (cosine over gemini-embedding-001)
+            |- similarity >= 0.97 -> REUSE    auto-serve
+            |- 0.85 .. 0.97       -> REVIEW   candidate shown to a human; $0 until accepted
+            '- below 0.85         -> GENERATE Genblaze pipeline -> B2 + provenance manifest</pre>
+<p>Modality, aspect ratio and style are hard constraints, not scored signals: they are
+substitutability requirements, and a 0.99 prompt match at the wrong aspect ratio is not a
+substitute. Similarity measures how alike two prompts read, not how alike two images look,
+which is exactly why the review band exists.</p>
+
+<h2>Measured policy</h2>
+<table>
+  <tr><th>category</th><th>n</th><th>reuse</th><th>review</th><th>generate</th></tr>
+  <tr><td>exact repeat</td><td>6</td><td>6</td><td>0</td><td>0</td></tr>
+  <tr><td>equivalent phrasing</td><td>10</td><td>5</td><td>5</td><td>0</td></tr>
+  <tr><td>attribute swap (red to blue, mug to glass)</td><td>10</td><td>0</td><td>9</td><td>1</td></tr>
+  <tr><td>same domain, different ask</td><td>7</td><td>0</td><td>0</td><td>7</td></tr>
+  <tr><td>unrelated</td><td>5</td><td>0</td><td>0</td><td>5</td></tr>
+</table>
+<p><b>0 of 17 dangerous pairs auto-reused. 0 of 10 non-exact equivalents regenerated.</b>
+Highest attribute-swap similarity measured 0.968, just under the 0.97 auto line. That thin
+margin is published rather than hidden, and it is the reason attribute swaps land in front
+of a person instead of silently on a customer. CI recomputes every verdict from the stored
+similarities and fails the build if the README, the report, or the test count drifts from
+the data.</p>
+
+<h2>Backblaze B2 is the product's memory</h2>
+<div class="two">
+<div>
+<ul>
+  <li><b>Assets</b> content-addressed by digest via <code>KeyStrategy.CONTENT_ADDRESSABLE</code>, so identical bytes dedupe by construction.</li>
+  <li><b>Manifests</b> beside assets. The library is a projection of them, so there is no second database to drift.</li>
+  <li><b>Embedding sidecars</b> keyed by normalized-prompt hash: a library prompt is embedded once, however many runs reference it.</li>
+  <li><b>Decision ledger</b> written with Object Lock GOVERNANCE retention, computed at each write.</li>
+  <li><b>Serving</b> by short-lived presigned URL, with a prefix containment check so a foreign manifest cannot turn the serve path into a presigned-URL oracle.</li>
+</ul>
+</div>
+<div>
+<pre>reprise/
+  assets/&lt;sha[:2]&gt;/&lt;sha[2:4]&gt;/&lt;sha&gt;.png
+  manifests/&lt;run_id&gt;.json
+  embeddings/&lt;prompt-sha&gt;.json
+  ledger/&lt;ts&gt;-&lt;seq&gt;-&lt;fp&gt;-&lt;nonce&gt;.json</pre>
+<p class="note">The savings scoreboard is recomputed from ledger objects on read. Nothing
+caches a number the ledger cannot back.</p>
+</div>
+</div>
+
+<div class="pagebreak"></div>
+
+<h2>Genblaze does the orchestration</h2>
+<ul>
+  <li>Every generation is a <code>Pipeline</code> with <code>ObjectStorageSink(raise_on_failure=True)</code>: nothing enters the library without a sha256-bound, verifiable manifest.</li>
+  <li><b>Admission is gated on <code>Manifest.verify_hash()</code></b>. A manifest whose payload no longer matches its canonical hash is refused entirely, so editing a stored run's prompt cannot point a popular prompt at bytes of someone else's choosing. Per-asset rules (succeeded steps, sha256-bound assets, prompted steps) then filter within a verified manifest.</li>
+  <li><b>A custom <code>SyncProvider</code></b> for Gemini-native image models, written because every <code>imagen-*</code> tier answers 404 "no longer available to new users" on newly created keys.</li>
+  <li><b>A model fallback chain.</b> A slug in a provider catalog is not a slug you are entitled to call, so a 404 walks the chain and the manifest records the model that actually produced the bytes.</li>
+  <li>Stock <code>ElevenLabsTTSProvider</code> for audio, behind the same interface.</li>
+</ul>
+
+<h2>Proof receipt</h2>
+<p>Every result carries the coordinates needed to check it independently: Genblaze run id,
+manifest key and its canonical hash, content-addressed asset key, sha256, producing
+provider and model, original cost, and the retention actually in force (read from the
+ledger's own state, so the UI cannot advertise a lock this instance does not write). These
+are values a viewer re-derives from the bucket, not a "verified" badge the app issues about
+itself.</p>
+
+<h2>Spend and trust posture</h2>
+<table>
+  <tr><th>risk</th><th>control</th></tr>
+  <tr><td>Uncounted spend</td><td>Two daily budgets (generation, decision embeddings), both RESERVED before the provider call. An unwritable reservation counts as cap-exhausted (fail closed).</td></tr>
+  <tr><td>Free path billed</td><td>The gateway calls back immediately before its first billable embedding, so an exact repeat consumes no paid quota.</td></tr>
+  <tr><td>Forged savings</td><td>Acceptance requires an HMAC capability token minted with the review that offered it.</td></tr>
+  <tr><td>Replayed savings</td><td>Each offer is named by the token and can be accepted once; a replay gets 409.</td></tr>
+  <tr><td>Tampered provenance</td><td>Manifest hash gate on admission.</td></tr>
+  <tr><td>Leaked internals</td><td>Upstream errors return a correlation id; the real error is logged, never returned.</td></tr>
+  <tr><td>XSS via prompt text</td><td>Results are built as DOM nodes with textContent; no API value is ever concatenated into HTML.</td></tr>
+</table>
+
+<h2>Stated limitations</h2>
+<ul>
+  <li>Prompt similarity is not image similarity. An image-embedding second signal is the obvious next move, and would narrow the review band with engineering rather than by moving a number.</li>
+  <li>Cap and replay checks are read-then-act, so a concurrent burst can overshoot by roughly the concurrency level. Reservations still land, so nothing goes uncounted.</li>
+  <li>Demo-scale scans re-list the bucket per request; Genblaze's <code>ParquetSink</code> tables are the natural index seed.</li>
+  <li>Object Lock is described precisely: a delete can hide a record behind a delete marker (tamper-evident, recoverable); it cannot destroy the version while retention holds.</li>
+</ul>
+
+<h2>Verification</h2>
+<p class="mono">78 tests, ruff, mypy strict, an eval-freshness pin, and a long-dash scan, all in CI.
+Live probe outputs, including two probe corrections kept deliberately, are in
+docs/run-evidence.md.</p>
+<p>Live: reprise-murex.vercel.app &nbsp;&middot;&nbsp; Source: github.com/OrionArchitekton/reprise<br>
+Upstream SDK feedback filed from this build: backblaze-labs/genblaze issues 205 and 206.</p>
+
+</body>
+</html>

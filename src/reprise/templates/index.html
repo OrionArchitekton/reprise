@@ -67,6 +67,7 @@
   <h1>Reprise <small>check what you already generated before you pay to generate it again</small></h1>
 
   <div class="board" id="board">
+    {% if not scoreboard_available %}<div class="stat"><b>n/a</b><span>ledger unreadable right now</span></div>{% endif %}
     <div class="stat"><b id="s-decisions">{{ decisions }}</b><span>decisions</span></div>
     <div class="stat"><b id="s-reuses">{{ scoreboard.reuses + scoreboard.accepts }}</b><span>assets reused</span></div>
     <div class="stat saved"><b id="s-saved">${{ '%.2f' % scoreboard.saved_usd }}</b><span>not re-spent</span></div>

@@ -42,8 +42,8 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, Field
 
 from reprise.embed import prompt_fingerprint
-from reprise.gateway import Gateway, GatewayResult
-from reprise.ledger import Ledger
+from reprise.gateway import Gateway, GatewayResult, LibraryUnavailable
+from reprise.ledger import Ledger, Scoreboard
 from reprise.model import Candidate, Decision, LibraryEntry, Request, Verdict
 
 log = logging.getLogger("reprise")
@@ -52,10 +52,12 @@ TEMPLATES = Path(__file__).parent / "templates"
 DEFAULT_DAILY_GENERATION_CAP = 25
 DEFAULT_DAILY_DECISION_CAP = 400
 ACCEPT_TOKEN_TTL_SEC = 1800
-# Reads that scan the whole ledger are cached briefly: every unauthenticated
-# request would otherwise cost O(ledger size) storage GETs, a cost an attacker
-# can inflate simply by making the ledger longer.
-READ_CACHE_TTL_SEC = 10.0
+# Reads that scan the whole ledger are cached: every unauthenticated request
+# would otherwise cost O(ledger size) BILLED storage reads, a cost an attacker
+# inflates simply by making the ledger longer, and which took the live demo
+# down when Backblaze's Class B transaction cap tripped (2026-07-26). The
+# scoreboard is a derived total; a minute of staleness costs nothing.
+READ_CACHE_TTL_SEC = 60.0
 
 
 class DecideBody(BaseModel):
@@ -286,11 +288,22 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     def index(demo: int = 0) -> str:
-        board = cached("scoreboard", ledger.summarize)
+        # The scoreboard is derived state. If storage cannot be read (an
+        # exhausted transaction cap did exactly this in production), the page
+        # must still render: losing the whole surface because a derived number
+        # is unavailable is a far worse failure than showing zeros with a note.
+        try:
+            board = cached("scoreboard", ledger.summarize)
+            available = True
+        except Exception as e:
+            log.warning("scoreboard unavailable: %s", e)
+            board = Scoreboard()
+            available = False
         return env.get_template("index.html").render(
             demo=bool(demo),
             scoreboard=asdict(board),
             decisions=board.decisions,
+            scoreboard_available=available,
         )
 
     @app.post("/api/decide")
@@ -332,6 +345,18 @@ def create_app(
             )
         except HTTPException:
             raise
+        except LibraryUnavailable as e:
+            # Deliberately NOT a generic upstream error: the caller needs to
+            # know we refused rather than that something broke, because the
+            # refusal is what stops them paying for an asset they may own.
+            log.warning("library unavailable: %s", e)
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "the asset library is temporarily unreadable, so we will not "
+                    "generate: retry shortly rather than pay twice"
+                ),
+            ) from e
         except Exception as e:
             raise fail(e) from e
 

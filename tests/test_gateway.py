@@ -20,7 +20,7 @@ import pytest
 from genblaze_core import Asset, MockProvider
 
 from reprise.embed import HashEmbedder
-from reprise.gateway import Gateway
+from reprise.gateway import Gateway, LibraryUnavailable
 from reprise.ledger import Ledger
 from reprise.model import Request, Verdict
 from tests.test_library import MemoryBackend
@@ -160,3 +160,32 @@ def test_unconfigured_modality_is_a_clear_error() -> None:
     gw = make_gateway(backend, CountingEmbedder())
     with pytest.raises(ValueError, match="no provider configured for modality 'video'"):
         gw.handle(Request(prompt="a drone shot over a coastal city", modality="video"))
+
+
+def test_an_unreadable_library_never_becomes_a_reason_to_spend() -> None:
+    """A storage failure must not read as "you do not own this".
+
+    When B2's transaction cap tripped, every manifest read failed, scan()
+    returned an empty projection, and the gateway concluded the library held
+    nothing and generated: the product paid twice for an asset it already
+    owned, which is the one outcome it exists to prevent. An incomplete
+    projection is not evidence of absence, so it cannot authorise spend.
+    """
+    backend = MemoryBackend()
+    gw = make_gateway(backend, CountingEmbedder())
+    gw.handle(Request(prompt="a red bicycle against a white wall", modality="image"))
+    assets_before = sum(1 for k in backend.objects if k.startswith("reprise/assets/"))
+
+    # Every manifest read now fails, exactly as it did under the cap.
+    def refuse(key: str) -> bytes:
+        if "/manifests/" in key:
+            raise RuntimeError("Class B transaction cap exceeded")
+        return MemoryBackend.get(backend, key)
+
+    backend.get = refuse  # type: ignore[method-assign]
+    gw.library.invalidate()
+
+    with pytest.raises(LibraryUnavailable):
+        gw.handle(Request(prompt="something entirely new", modality="image"))
+
+    assert sum(1 for k in backend.objects if k.startswith("reprise/assets/")) == assets_before

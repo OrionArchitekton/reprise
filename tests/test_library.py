@@ -29,6 +29,7 @@ class MemoryBackend(StorageBackend):
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
         self.locks: dict[str, Any] = {}
+        self.gets = 0
 
     def put(self, key: str, data: Any, *, content_type: str | None = None,
             metadata: dict[str, str] | None = None,
@@ -43,6 +44,9 @@ class MemoryBackend(StorageBackend):
         return key
 
     def get(self, key: str) -> bytes:
+        # Counted: B2 charges per object read (Class B), and the whole point of
+        # the index work is that a steady-state request performs almost none.
+        self.gets += 1
         return self.objects[key]
 
     def exists(self, key: str) -> bool:
@@ -170,3 +174,39 @@ def test_identical_prompts_share_one_sidecar() -> None:
     assert len(entries) == 2
     sidecars = [k for k in backend.objects if k.startswith("reprise/embeddings/")]
     assert len(sidecars) == 1  # same normalized prompt -> one shared vector
+
+
+def test_scan_is_cached_so_repeat_requests_do_not_re_read_every_manifest() -> None:
+    """Each request re-read every manifest object, and B2 bills per read.
+
+    That is O(library) paid transactions per request, and it is what tripped
+    the account's Class B cap in production. Within the cache window the
+    projection is reused; a write invalidates it, so a freshly generated asset
+    is never invisible to the next request.
+    """
+    backend = seeded_backend()
+    lib = B2Library(backend, prefix="reprise", scan_cache_sec=300, clock=lambda: 1000.0)
+
+    lib.scan()
+    gets_after_first = backend.gets
+    lib.scan()
+
+    assert gets_after_first > 0
+    assert backend.gets == gets_after_first  # second scan read nothing
+
+    lib.invalidate()
+    lib.scan()
+    assert backend.gets > gets_after_first
+
+
+def test_a_cached_scan_expires() -> None:
+    backend = seeded_backend()
+    now = [1000.0]
+    lib = B2Library(backend, prefix="reprise", scan_cache_sec=60, clock=lambda: now[0])
+    lib.scan()
+    gets = backend.gets
+
+    now[0] += 61
+    lib.scan()
+
+    assert backend.gets > gets

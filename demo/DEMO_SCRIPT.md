@@ -19,17 +19,22 @@ replays its own flow from the landing page.
 
 ### SHOT reuse
 - target: dashboard
-- narration: Here is a prompt this library has already paid for. Reprise finds the exact match and serves the stored asset straight out of B2 behind a short lived presigned URL. Nothing was generated. The four cents that would have been spent again is booked as a saving, and the decision is written to the ledger before you see this card.
+- narration: Here is a prompt this library has already paid for. Reprise finds the exact match and serves the stored asset straight out of B2 behind a short lived presigned URL. Nothing was generated, and the four cents is booked as a saving. You do not have to take our word for it. Every result opens a proof receipt: the Genblaze run, the manifest key and its canonical hash, the object key, the digest, and the retention in force. Every line is checkable in the bucket.
 - action: goto url="/"
 - action: wait ms=400
 - action: click selector="button[data-fill*='a red bicycle']"
 - action: click selector="#go"
 - action: wait ms=7000
 - action: highlight selector="#result"
+- action: wait ms=1200
+- action: click selector=".receipt summary"
+- action: wait ms=800
+- action: scroll selector=".receipt dl"
+- action: highlight selector=".receipt dl"
 
 ### SHOT review
 - target: dashboard
-- narration: Now a near duplicate. Crimson instead of red, propped instead of leaning. Ninety three percent similar. But similarity between prompts measures how alike two prompts read, not how alike two images look. So anything between 0.85 and 0.97 stops in front of a person. Accepting is a signed capability token, and only then does the saving count.
+- narration: Now a near duplicate. Crimson instead of red, propped instead of leaning. Ninety three percent similar. But similarity between prompts measures how alike two prompts read, not how alike two images look, so the candidate is shown, not just scored: you decide by looking at it. Anything between 0.85 and 0.97 stops here. Accepting is a signed capability token that can be spent once, and only then does the saving count.
 - action: goto url="/"
 - action: wait ms=400
 - action: click selector="button[data-fill*='a crimson bicycle']"
@@ -43,10 +48,10 @@ replays its own flow from the landing page.
 
 ### SHOT generate
 - target: dashboard
-- narration: And something the library has never seen. Below 0.85 Reprise stops guessing and pays. This is a real Genblaze run against Gemini native image generation, through a provider we wrote ourselves because every Imagen tier now refuses new API keys. It lands in B2 addressed by its own sha256, with a provenance manifest beside it, so the next person who asks gets it free.
+- narration: And something the library has never seen. Below 0.85 Reprise stops guessing and pays. This is a real Genblaze run through a provider we wrote ourselves, because every Imagen tier now refuses newly created API keys while still advertising itself as available. So the provider carries a fallback chain, and the manifest records the model that actually produced the bytes. It lands in B2 addressed by its own sha256, so the next person who asks gets it free.
 - action: goto url="/"
 - action: wait ms=400
-- action: type selector="#prompt" text="a bowl of ramen photographed from directly above on a slate table"
+- action: type selector="#prompt" text="a vintage typewriter on a wooden desk beside a stack of letters"
 - action: click selector="#go"
 - action: wait ms=24000
 - action: highlight selector="#result"

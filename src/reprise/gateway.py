@@ -45,6 +45,15 @@ from reprise.nearmatch import classify, score_candidates
 ProviderSpec = tuple[Callable[[], BaseProvider], str]
 
 
+class LibraryUnavailable(RuntimeError):
+    """The library could not be read completely, so no decision is safe.
+
+    Distinct from "the library is empty": absence of evidence is not evidence
+    of absence, and the difference is the difference between reusing an asset
+    and paying for it a second time.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class GatewayResult:
     decision: Decision
@@ -80,6 +89,26 @@ class Gateway:
 
     # -- the one entry point ----------------------------------------------
 
+    def _scan(self) -> list[LibraryEntry]:
+        """Project the library, refusing to pass off a partial read as empty.
+
+        `scan()` skips objects it cannot use so one corrupt file does not take
+        down the whole projection. That is right for a foreign or malformed
+        object, whose absence is a fact about the bucket, and wrong for a
+        storage outage: when B2's transaction cap tripped, every manifest READ
+        failed, the projection came back empty, and the gateway concluded the
+        library held nothing and generated. A reuse product that pays twice
+        because it could not read its own library has failed at the one thing it
+        does. Unreadable is therefore refused; unparseable is not.
+        """
+        entries = self.library.scan()
+        if self.library.last_scan_unreadable:
+            raise LibraryUnavailable(
+                f"{len(self.library.last_scan_unreadable)} manifest(s) could not be "
+                "read; refusing to decide against a partial library"
+            )
+        return entries
+
     def preview(
         self, request: Request, *, before_embed: Callable[[], None] | None = None
     ) -> Decision:
@@ -95,7 +124,7 @@ class Gateway:
         unconditionally, charging a paid quota for a free lookup; raising from
         the hook (a cap refusal) stops the embedding from happening.
         """
-        return self._decide(request, self.library.scan(), before_embed=before_embed)
+        return self._decide(request, self._scan(), before_embed=before_embed)
 
     def _decide(
         self,
@@ -124,7 +153,7 @@ class Gateway:
         the preview decision through removes that duplicate spend entirely.
         """
         if decision is None:
-            decision = self._decide(request, self.library.scan())
+            decision = self._decide(request, self._scan())
 
         if decision.verdict is Verdict.REUSE:
             assert decision.candidate is not None
@@ -146,6 +175,10 @@ class Gateway:
         # must surface as an error (Genblaze itself seals a failure manifest),
         # not as a ledger row claiming work that never completed.
         entry = self._generate(request)
+        # The bucket just changed: a stale projection would make the asset we
+        # were paid to create invisible to the very next request, which is the
+        # one failure mode the reuse product cannot have.
+        self.library.invalidate()
         self._ledger.record(decision)
         url = self._serve_url(entry.storage_key)
         return GatewayResult(decision=decision, serve_url=url, new_entry=entry)

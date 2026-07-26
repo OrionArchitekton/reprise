@@ -10,6 +10,7 @@ embedding path, and an unauthenticated accept that could forge savings.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -364,3 +365,30 @@ def test_generate_fresh_overrides_a_reuse_and_costs_generation_budget() -> None:
     assert ledger.spend_reservations_today(("reserve_generate",)) == 2
     # The override skips the library entirely, so it must not pay to embed.
     assert ledger.spend_reservations_today(("reserve_embed",)) == embeds_before
+
+
+def test_the_page_still_loads_when_the_ledger_cannot_be_read() -> None:
+    """Storage trouble must not take down the whole surface.
+
+    A Backblaze transaction cap made every ledger read fail, and because the
+    homepage rendered the scoreboard inline, the page itself 500ed: a visitor
+    could not even see what the product was. The scoreboard is derived state;
+    the right degradation is to show it as unavailable, not to lose the app.
+    """
+
+    class DeadLedger(Ledger):
+        def summarize(self) -> Any:
+            raise RuntimeError("Class B transaction cap exceeded")
+
+    backend = MemoryBackend()
+    dead = DeadLedger(backend, prefix="reprise", retain_days=30)
+    gw = Gateway(
+        backend, CountingEmbedder(), dead,
+        {"image": (mock_image_provider, "mock-image-v1")}, prefix="reprise",
+    )
+    client = TestClient(create_app(gw, dead, accept_secret=SECRET))
+
+    r = client.get("/")
+
+    assert r.status_code == 200
+    assert "Reprise" in r.text

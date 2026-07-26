@@ -22,7 +22,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 
 from genblaze_core import StorageBackend
 
@@ -36,16 +37,46 @@ SIDECAR_SCHEMA = 1
 class B2Library:
     """Scan manifests and manage embedding sidecars in one bucket prefix."""
 
-    def __init__(self, backend: StorageBackend, *, prefix: str = "reprise") -> None:
+    def __init__(
+        self,
+        backend: StorageBackend,
+        *,
+        prefix: str = "reprise",
+        scan_cache_sec: float = 120.0,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
         self._backend = backend
         self._prefix = prefix.rstrip("/")
         self.last_scan_skipped: list[str] = []
+        self.last_scan_unreadable: list[str] = []
+        self._scan_cache_sec = scan_cache_sec
+        self._clock = clock or time.monotonic
+        self._cached: tuple[float, list[LibraryEntry]] | None = None
 
     # -- scanning ----------------------------------------------------------
 
+    def invalidate(self) -> None:
+        """Drop the cached projection: something was added to the bucket."""
+        self._cached = None
+
     def scan(self) -> list[LibraryEntry]:
-        """Project every readable manifest in the bucket into entries."""
+        """Project every readable manifest in the bucket into entries.
+
+        Cached for `scan_cache_sec`. Reading every manifest object on every
+        request is O(library) BILLED transactions per request: it grows with
+        the library and tripped the account's Class B cap in production
+        (2026-07-26), after which every path that touched storage failed. The
+        cache is per process, so a cold instance still pays a full scan, and a
+        write invalidates it so a new asset is never invisible to the next
+        request. A persisted index is the real fix at scale; ParquetSink is the
+        natural seed.
+        """
+        if self._cached is not None:
+            stamped, cached = self._cached
+            if self._clock() - stamped < self._scan_cache_sec:
+                return cached
         self.last_scan_skipped = []
+        self.last_scan_unreadable = []
         entries: list[LibraryEntry] = []
         token: str | None = None
         while True:
@@ -54,15 +85,26 @@ class B2Library:
             )
             for fe in page.entries:
                 try:
-                    data = json.loads(self._backend.get(fe.key))
-                    entries.extend(entries_from_manifest(data))
+                    raw = self._backend.get(fe.key)
+                except Exception:
+                    # Storage could not serve the object. That is a property of
+                    # the STORE, not of this object, so it is tracked
+                    # separately: a caller deciding whether to spend money must
+                    # know the projection is incomplete.
+                    self.last_scan_unreadable.append(fe.key)
+                    continue
+                try:
+                    entries.extend(entries_from_manifest(json.loads(raw)))
                 except Exception:
                     # A corrupt or foreign object must not take down the scan;
-                    # it is recorded and surfaced, never silently dropped.
+                    # it is recorded and surfaced, never silently dropped. The
+                    # object was READ fine, so the projection is still complete
+                    # with respect to everything this bucket actually holds.
                     self.last_scan_skipped.append(fe.key)
             token = page.next_token
             if token is None:
                 break
+        self._cached = (self._clock(), entries)
         return entries
 
     # -- embeddings --------------------------------------------------------

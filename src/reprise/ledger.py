@@ -140,14 +140,23 @@ class Ledger:
 
     def _write(self, doc: dict[str, Any], prompt: str) -> str:
         self._seq += 1
-        ts = self._clock().strftime("%Y%m%dT%H%M%S.%fZ")
+        now = self._clock()
+        ts = now.strftime("%Y%m%dT%H%M%S.%fZ")
+        # Date and kind ride in the KEY, so the daily cap check is a listing
+        # rather than a read of every record. Reading each object to find its
+        # kind cost one paid Class B transaction per record per request, which
+        # grew with the ledger and tripped Backblaze's transaction cap in
+        # production (2026-07-26): the app fell to its fail-closed path and
+        # stopped answering. Listing is one call per kind, whatever the size.
+        day = now.strftime("%Y%m%d")
+        kind = str(doc.get("kind", "decision"))
         # uuid4 suffix, not just the per-instance counter: on serverless every
         # instance starts its counter at 1, so two instances recording the same
         # prompt in the same microsecond would collide and silently lose a
         # record (and with it, a unit of the rate limiter's count).
         nonce = uuid.uuid4().hex[:8]
         key = (
-            f"{self._prefix}/ledger/{ts}-{self._seq:06d}-"
+            f"{self._prefix}/ledger/{day}/{kind}/{ts}-{self._seq:06d}-"
             f"{prompt_fingerprint(prompt)[:8]}-{nonce}.json"
         )
         data = json.dumps(doc, sort_keys=True).encode()
@@ -218,14 +227,27 @@ class Ledger:
         return out
 
     def spend_reservations_today(self, kinds: tuple[str, ...]) -> int:
-        """Count today's spend reservations (the cap's source of truth)."""
-        today = self._clock().date().isoformat()
-        return sum(
-            1
-            for doc in self.entries()
-            if doc.get("kind") in kinds
-            and str(doc.get("ts", "")).startswith(today)
-        )
+        """Count today's spend reservations (the cap's source of truth).
+
+        Counts KEYS under `{prefix}/ledger/{today}/{kind}/`, so the cost is one
+        listing per kind instead of a read of every record ever written.
+        Records written before this layout live at the flat `ledger/` root and
+        are not counted here: they are yesterday's usage by the time it
+        matters, and undercounting a past day cannot let today overspend.
+        """
+        day = self._clock().strftime("%Y%m%d")
+        total = 0
+        for kind in kinds:
+            token: str | None = None
+            while True:
+                page = self._backend.list(
+                    f"{self._prefix}/ledger/{day}/{kind}/", continuation_token=token
+                )
+                total += len(page.entries)
+                token = page.next_token
+                if token is None:
+                    break
+        return total
 
     def accepted_review_ids(self) -> set[str]:
         """Which review offers have already been spent.

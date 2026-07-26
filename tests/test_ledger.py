@@ -145,3 +145,24 @@ def test_retention_horizon_is_computed_at_every_write() -> None:
     assert lock_first is not None and lock_later is not None
     assert lock_first.retain_until == now + timedelta(days=30)
     assert lock_later.retain_until == now + timedelta(days=40)
+
+
+def test_counting_todays_reservations_reads_no_objects() -> None:
+    """The cap check must not GET the whole ledger.
+
+    Every decide checks a budget, and the check read every ledger object to
+    find today's reservations. That is O(ledger) paid object reads per request,
+    growing with the ledger, and it took the live demo down when Backblaze's
+    Class B transaction cap tripped. The kind and the date live in the KEY, so
+    counting is a listing.
+    """
+    b = LockRecordingBackend()
+    led = Ledger(b, prefix="reprise", clock=fixed_clock)
+    led.reserve_spend("a prompt", "reserve_generate")
+    led.reserve_spend("another prompt", "reserve_generate")
+    led.reserve_spend("a third", "reserve_embed")
+    b.gets = 0
+
+    assert led.spend_reservations_today(("reserve_generate",)) == 2
+    assert led.spend_reservations_today(("reserve_embed",)) == 1
+    assert b.gets == 0
