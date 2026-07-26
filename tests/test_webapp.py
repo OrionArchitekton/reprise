@@ -219,6 +219,31 @@ def test_review_accept_flow_books_saving_with_the_issued_token() -> None:
     assert ledger.summarize().saved_usd == 0.05
 
 
+def test_accept_response_reports_the_saving_the_ledger_booked() -> None:
+    """The card a user sees must not understate what the ledger recorded.
+
+    The response was built from the REVIEW decision, whose saved_usd is 0.0 by
+    construction, while record_accept books the candidate's cost. The two
+    surfaces disagreed: "Saved $0.00" on screen over a $0.05 ledger record.
+    """
+    client, _, ledger, _ = build()
+    client.post("/api/decide", json={"prompt": PROMPT})
+    review = client.post("/api/decide", json={"prompt": NEAR}).json()
+
+    accepted = client.post(
+        "/api/accept",
+        json={
+            "prompt": NEAR,
+            "modality": "image",
+            "asset_id": review["candidate"]["asset_id"],
+            "token": review["accept_token"],
+        },
+    ).json()
+
+    assert accepted["saved_usd"] == review["candidate"]["cost_usd"] > 0
+    assert accepted["saved_usd"] == ledger.summarize().saved_usd
+
+
 def test_upstream_errors_do_not_leak_internals() -> None:
     """The 502 body must carry a correlation id, not the exception text."""
 

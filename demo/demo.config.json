@@ -1,0 +1,35 @@
+{
+  "script": "/home/orion/src/orion-estate/personal-brand/hackathons/reprise/demo/DEMO_SCRIPT.md",
+  "dashboardBaseUrl": "http://localhost:8077",
+  "out": "/home/orion/src/orion-estate/personal-brand/hackathons/reprise/demo/out",
+  "resolution": { "width": 1920, "height": 1080 },
+  "fps": 30,
+  "captureCss": "main { zoom: 1.15; min-height: 86vh; display: flex; flex-direction: column; } footer { margin-top: auto; padding-top: 32px; }",
+  "voice": {
+    "voiceId": "21m00Tcm4TlvDq8ikWAM",
+    "modelId": "eleven_multilingual_v2",
+    "seed": 1204,
+    "stability": 0.5,
+    "similarity": 0.75
+  },
+  "theme": {
+    "captionFont": "Arial",
+    "captionSize": 24,
+    "captions": "wordpop",
+    "captionAccent": "#58a6ff"
+  },
+  "motion": {
+    "baseZoom": 1.04,
+    "driftAmp": 0.008,
+    "zoomLevel": 1.28
+  },
+  "audio": {
+    "bedDb": -32
+  },
+  "brand": {
+    "title": "Reprise",
+    "subtitle": "Check what you already own before you pay to generate",
+    "url": "reprise-murex.vercel.app",
+    "accent": "#58a6ff"
+  }
+}

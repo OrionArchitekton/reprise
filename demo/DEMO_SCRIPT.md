@@ -1,0 +1,62 @@
+# Reprise demo script
+
+Rendered with `agent-demo-video` against a LOCAL production server
+(`uvicorn reprise.webapp:build_production_app`) wired to the real Backblaze B2
+bucket, real Gemini, and the real Object Lock ledger. Nothing in the recording
+is mocked: the reuse really serves from B2, the generation really spends, and
+the scoreboard really reads the ledger.
+
+Each shot runs in a fresh browser context, so every shot re-navigates and
+replays its own flow from the landing page.
+
+### SHOT problem
+- target: dashboard
+- url: /
+- narration: Every team building with generative media pays for the same asset twice. The same product shot, the same jingle, weeks apart, requested by different people. Reprise sits in front of a Genblaze pipeline and asks one question first: do we already own this? Those numbers are not a mock. They come from an object locked ledger in Backblaze B2.
+- action: goto url="/"
+- action: wait ms=700
+- action: highlight selector="#board"
+
+### SHOT reuse
+- target: dashboard
+- narration: Here is a prompt this library has already paid for. Reprise finds the exact match and serves the stored asset straight out of B2 behind a short lived presigned URL. Nothing was generated. The four cents that would have been spent again is booked as a saving, and the decision is written to the ledger before you see this card.
+- action: goto url="/"
+- action: wait ms=400
+- action: click selector="button[data-fill*='a red bicycle']"
+- action: click selector="#go"
+- action: wait ms=7000
+- action: highlight selector="#result"
+
+### SHOT review
+- target: dashboard
+- narration: Now a near duplicate. Crimson instead of red, propped instead of leaning. Ninety three percent similar. But similarity between prompts measures how alike two prompts read, not how alike two images look. So anything between 0.85 and 0.97 stops in front of a person. Accepting is a signed capability token, and only then does the saving count.
+- action: goto url="/"
+- action: wait ms=400
+- action: click selector="button[data-fill*='a crimson bicycle']"
+- action: click selector="#go"
+- action: wait ms=8000
+- action: highlight selector="#result"
+- action: wait ms=1500
+- action: click selector=".actions button.primary"
+- action: wait ms=6000
+- action: highlight selector="#result"
+
+### SHOT generate
+- target: dashboard
+- narration: And something the library has never seen. Below 0.85 Reprise stops guessing and pays. This is a real Genblaze run against Gemini native image generation, through a provider we wrote ourselves because every Imagen tier now refuses new API keys. It lands in B2 addressed by its own sha256, with a provenance manifest beside it, so the next person who asks gets it free.
+- action: goto url="/"
+- action: wait ms=400
+- action: type selector="#prompt" text="a bowl of ramen photographed from directly above on a slate table"
+- action: click selector="#go"
+- action: wait ms=24000
+- action: highlight selector="#result"
+
+### SHOT ledger
+- target: dashboard
+- narration: The board moved because the ledger moved. Every decision is an object locked record: a delete can hide one behind a delete marker, but it cannot destroy the version while retention holds. And the thresholds are measured, not asserted. Thirty eight labeled pairs, zero false auto reuse, published with the code.
+- action: goto url="/"
+- action: wait ms=700
+- action: highlight selector="#board"
+- action: wait ms=1500
+- action: scroll selector="footer"
+- action: highlight selector="footer"

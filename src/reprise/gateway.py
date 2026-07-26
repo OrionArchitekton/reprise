@@ -25,7 +25,7 @@ index (the ParquetSink tables are the natural seed for one).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from genblaze_core import Manifest, Modality, ObjectStorageSink, Pipeline
 from genblaze_core.providers.base import BaseProvider
@@ -133,7 +133,11 @@ class Gateway:
             raise ValueError("accept_review requires a REVIEW decision with a candidate")
         url = self._serve_url(decision.candidate.entry.storage_key)
         self._ledger.record_accept(decision)
-        return GatewayResult(decision=decision, serve_url=url)
+        # A REVIEW decision carries saved_usd 0.0 by construction: the money
+        # only becomes real at acceptance. Report what record_accept booked, so
+        # the card the user sees cannot understate the ledger it just wrote.
+        booked = replace(decision, saved_usd=decision.candidate.entry.cost_usd)
+        return GatewayResult(decision=booked, serve_url=url)
 
     def _serve_url(self, storage_key: str) -> str:
         """Mint a short-lived URL, but only for keys inside our asset tree.
