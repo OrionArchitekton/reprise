@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, "src")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from reprise.nearmatch import AUTO_REUSE_THRESHOLD, REVIEW_THRESHOLD  # noqa: E402
+from reprise.nearmatch import AUTO_REUSE_THRESHOLD, REVIEW_THRESHOLD
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_JSON = ROOT / "eval" / "report.json"
