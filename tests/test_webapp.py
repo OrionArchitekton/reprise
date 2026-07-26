@@ -409,7 +409,7 @@ def test_readyz_fails_when_storage_cannot_be_read() -> None:
         raise RuntimeError("Class B transaction cap exceeded")
 
     backend.get = refuse  # type: ignore[method-assign]
-    backend.list = lambda *a, **k: (_ for _ in ()).throw(  # type: ignore[assignment]
+    backend.list = lambda *a, **k: (_ for _ in ()).throw(  # type: ignore[method-assign]
         RuntimeError("Class B transaction cap exceeded")
     )
 
