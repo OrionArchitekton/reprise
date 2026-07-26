@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """CI pin: the committed eval artifacts must be self-consistent, offline.
 
-Recomputes verdicts from the similarities STORED in eval/report.json (no
-network, no re-embedding) under the CURRENT thresholds, and re-renders the
-markdown. Any drift -- a hand-edited number, a threshold change without a
-re-run, a doctored case list -- fails the build. This is the regenerate-and-
-diff pin that lets the README quote eval numbers without being able to lie.
+Recomputes every verdict from the similarities STORED in eval/report.json (no
+network, no re-embedding) under the CURRENT thresholds, recomputes the
+headline error counts, and checks that report.md AND the README table quote
+those same numbers. A threshold change without a re-run, a doctored case list,
+or a hand-edited scorecard row fails the build.
+
+What it does NOT catch, stated plainly: the stored similarity values
+themselves are taken on trust (only a live re-run of tools/run_eval.py can
+re-derive those), so editing a similarity in a way that keeps its verdict band
+would pass. The pin binds the published numbers to the committed data, not the
+committed data to the providers.
 """
 
 from __future__ import annotations
@@ -62,13 +68,25 @@ def main() -> None:
     if summary["missed_reuse"]["count"] != len(missed):
         fail("missed_reuse count drifted from stored results")
 
-    # The MD must carry the same headline numbers (cheap containment check;
-    # full re-render equality would couple CI to cosmetic wording).
-    md = REPORT_MD.read_text()
+    # The MD and the README must both carry the JSON's headline numbers.
+    # Containment, not full re-render equality: cosmetic wording stays free,
+    # but a hand-edited number in either file fails the build.
     fa = summary["false_auto_reuse"]
+    md = REPORT_MD.read_text()
     needle = f"False auto-reuse: {fa['count']} / {fa['of_dangerous_pairs']} dangerous pairs"
     if needle not in md:
         fail(f"report.md does not carry the JSON headline ({needle!r})")
+
+    readme = (ROOT / "README.md").read_text()
+    claim = f"{fa['count']} / {fa['of_dangerous_pairs']} dangerous pairs auto-reused"
+    if claim not in readme:
+        fail(f"README.md does not carry the JSON headline ({claim!r})")
+
+    # Every per-category count the README table quotes must match the JSON.
+    for cat, s in summary["by_category"].items():
+        row = f"| {s['n']} | {s['reuse']} | {s['review']} | {s['generate']} |"
+        if row not in readme:
+            fail(f"README table row for {cat!r} does not match report.json ({row!r})")
 
     print(
         f"eval artifacts consistent: {len(results)} pairs, "

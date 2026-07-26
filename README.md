@@ -24,9 +24,9 @@ prompt ->  exact match?  ------ yes -> REUSE   (serve from B2, $0, saving booked
 ```
 
 Every decision is written to an **Object-Lock ledger** in B2 (GOVERNANCE
-retention): the savings scoreboard is recomputed from records nobody can
-quietly edit. Every generated asset carries Genblaze's provenance manifest,
-sha256-bound by `ObjectStorageSink`.
+retention): the savings scoreboard is recomputed from records nobody can edit
+or destroy while retention holds. Every generated asset carries Genblaze's
+provenance manifest, sha256-bound by `ObjectStorageSink`.
 
 ## Measured, not promised
 
@@ -42,7 +42,9 @@ by `tools/run_eval.py`; CI fails if the numbers drift from the generator):
 | same domain, different ask | 7 | 0 | 0 | 7 |
 | unrelated | 5 | 0 | 0 | 5 |
 
-**0 / 17 dangerous pairs auto-reused. 0 / 16 equivalent pairs missed.**
+**0 / 17 dangerous pairs auto-reused. 0 / 10 non-exact equivalent pairs
+regenerated** (the other 6 equivalent pairs are exact repeats, which cannot
+miss by construction; of the 10, five auto-reused and five went to review).
 Honest caveat: the highest attribute-swap similarity measured 0.968, close
 under the 0.97 auto line. The review band exists precisely because prompt
 similarity cannot safely separate "same scene, different subject" on its own;
@@ -54,11 +56,15 @@ swaps land in front of a human, never silently on a customer.
 - content-addressed asset layout (`assets/{sha[:2]}/{sha[2:4]}/{sha}`) via
   `KeyStrategy.CONTENT_ADDRESSABLE` -- identical bytes dedupe by construction;
 - provenance manifests beside assets (`manifests/{run_id}.json`);
-- embedding sidecars keyed by normalized-prompt sha256 (`embeddings/`) -- one
-  API call per distinct prompt, ever;
+- embedding sidecars keyed by normalized-prompt sha256 (`embeddings/`) -- a
+  library prompt is embedded once and never again, however many runs reuse it;
 - an append-only decision ledger (`ledger/`) written with **Object Lock**
-  GOVERNANCE retention -- deleting a record's version is refused by B2 itself
-  (verified live; see [docs/run-evidence.md](docs/run-evidence.md));
+  GOVERNANCE retention -- deleting a record's *version* is refused by B2
+  itself. A plain delete can still *hide* a record behind a delete marker
+  (tamper-evident and recoverable, not indestructible), and the demo
+  scoreboard reads current versions, so it would not show a hidden record.
+  Verified live, correction history included, in
+  [docs/run-evidence.md](docs/run-evidence.md);
 - assets served with short-lived presigned URLs; rotating URLs are never
   persisted.
 
@@ -104,10 +110,17 @@ few cents, are `tools/live_probe.py` and `tools/live_generate.py`.
   (tamper-evident, recoverable); it cannot destroy the version until
   retention expires. Verified live, correction history included, in
   [docs/run-evidence.md](docs/run-evidence.md).
-- The public demo caps fresh generations per day (the cap returns HTTP 429
-  *before* spend; reuse and review keep working). Demo-scale scans re-list
-  the bucket per request; a production deployment would maintain an index
-  (Genblaze's `ParquetSink` tables are the natural seed).
+- The public demo caps two budgets per day: fresh generations, and decisions
+  (which each pay for an embedding). Both reserve before spending and return
+  HTTP 429 when exhausted; free paths keep working. The reservation is
+  written before the provider call, so a spend is never uncounted, but the
+  check is still read-then-act: a burst of concurrent requests can overshoot
+  a cap by roughly the concurrency level before the reservations land.
+- Acceptance of a review candidate requires an HMAC capability token issued
+  in the review response; there is no user accounts system in the demo.
+- Demo-scale scans re-list the bucket per request; a production deployment
+  would maintain an index (Genblaze's `ParquetSink` tables are the natural
+  seed).
 
 ## License
 
