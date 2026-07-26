@@ -85,9 +85,9 @@ https://github.com/backblaze-labs/genblaze/issues/205 (genblaze-google ships no 
 - [ ] The GitHub repo is public and the README setup steps work from a clean clone
 - [ ] `python tools/check_eval_freshness.py` exits 0 at the submitted SHA
 - [ ] No long dashes anywhere in the pasted text
-- [ ] `python tools/smoke.py https://reprise-murex.vercel.app` passes end to end
-      (it fails if the homepage is showing the degraded scoreboard, which is the
-      shape the 2026-07-26 transaction-cap outage took)
-- [ ] `GET /readyz` returns 200 (that probe reads storage; `/healthz` does not)
+- [ ] `python tools/smoke.py https://reprise-murex.vercel.app` passes end to end.
+      It starts at `/readyz`, which reads storage where `/healthz` does not, and
+      it fails if the homepage is showing the degraded scoreboard: those are the
+      two shapes the 2026-07-26 transaction-cap outage took.
 - [ ] The Backblaze caps have headroom for the judging window (Caps and Alerts):
       a judge hitting an exhausted cap sees a refusal, not a demo

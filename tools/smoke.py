@@ -63,6 +63,14 @@ def main() -> None:
     status, body = call(f"{base}/healthz")
     check("healthz", status == 200, body)
 
+    # Liveness and readiness answer different questions, and only the second
+    # one could have seen the cap outage. Checking it here rather than leaving
+    # it as a line in a manual checklist means the pre-submit gate is one
+    # command, and a capped bucket fails it on the FIRST probe instead of four
+    # checks later.
+    status, ready = call(f"{base}/readyz")
+    check("readyz (storage actually readable)", status == 200, ready)
+
     status, page = call(f"{base}/")
     check("homepage renders", status == 200 and "Reprise" in str(page))
     # The cap outage rendered a page that loaded but could not show its numbers.
