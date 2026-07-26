@@ -2,6 +2,27 @@
 
 All timestamps PT. Every claim below is a pasted probe result, not a paraphrase.
 
+## 2026-07-26 ~10:25 - Phase 3 deploy verified (public URL live)
+
+Vercel team project (dan-mercedes-projects/reprise), Python runtime, env from
+doppler via stdin. Verification ladder, all live:
+
+```
+https://reprise-murex.vercel.app                       HTTP:200   <- PUBLIC alias
+https://reprise-dan-mercedes-projects.vercel.app       HTTP:302 -> vercel SSO (as expected for team alias)
+identity: <title>Reprise - reuse before you generate</title>   <- ours, not a squatter
+healthz: {"status":"ok","app":"reprise"}
+precheck: {"generations_today":2,"cap":40,"generation_available":true}  <- reads REAL B2 ledger
+live decide (repeat prompt): verdict=reuse saved=0.0387
+  serve_url host s3.us-west-004.backblazeb2.com; asset fetch 200 image/png 1907004 bytes
+```
+
+Cap note, stated honestly: the 429-before-spend path is proven by an
+integration test (test_generation_cap_binds_with_429...); a live burst was NOT
+fired against the public URL because each overflow attempt above the cap would
+first burn ~40 real generations. /api/precheck live-verifies the counter reads
+the same ledger the cap consults.
+
 ## 2026-07-26 ~10:05 - LIVE multi-provider generation proof (real spend)
 
 tools/live_generate.py against the real bucket, real providers:

@@ -14,3 +14,4 @@ data/
 # never commit credentials; all secrets live in doppler (genblaze-hackathon/prd)
 .env
 .env.*
+.vercel
