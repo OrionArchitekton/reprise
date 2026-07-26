@@ -73,7 +73,7 @@ https://github.com/backblaze-labs/genblaze/issues/205 (genblaze-google ships no 
 | Criterion | Evidence |
 |---|---|
 | Real-world utility | The cost of regenerating what your own pipeline already made is the problem; the live demo books real savings against a real bucket. |
-| Production readiness | 88 tests, mypy strict, CI pinning published numbers to the eval data, reserve-before-spend budgets, capability-gated writes, correlation-id error handling. |
+| Production readiness | 90 tests, mypy strict, CI pinning published numbers to the eval data, reserve-before-spend budgets, capability-gated writes, correlation-id error handling. |
 | B2 storage and data orchestration | Content addressing, manifests, sidecars, Object Lock ledger, presigned serving with a prefix containment check. |
 | Use of Genblaze | Pipeline, ObjectStorageSink, manifest verification as an admission gate, a custom provider, and two upstream issues filed from real findings. |
 

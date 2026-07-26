@@ -26,6 +26,7 @@ import time
 from collections.abc import Callable, Sequence
 
 from genblaze_core import StorageBackend
+from genblaze_core.storage.errors import StorageError, StorageErrorCode
 
 from reprise.embed import Embedder, prompt_fingerprint
 from reprise.ingest import entries_from_manifest
@@ -43,6 +44,7 @@ class B2Library:
         *,
         prefix: str = "reprise",
         scan_cache_sec: float = 120.0,
+        vector_cache_max: int = 2048,
         clock: Callable[[], float] | None = None,
     ) -> None:
         self._backend = backend
@@ -52,6 +54,14 @@ class B2Library:
         self._scan_cache_sec = scan_cache_sec
         self._clock = clock or time.monotonic
         self._cached: tuple[float, list[LibraryEntry]] | None = None
+        # (embedder, fingerprint) -> vector. A sidecar is content-addressed by
+        # the fingerprint of the normalized prompt and written once, so it can
+        # be remembered for the life of the process without a staleness window
+        # (unlike the scan cache, which projects a bucket that grows). Bounded
+        # so a long-lived instance serving many distinct prompts cannot grow
+        # this without limit.
+        self._vectors: dict[tuple[str, str], tuple[float, ...]] = {}
+        self._vector_cache_max = vector_cache_max
 
     # -- scanning ----------------------------------------------------------
 
@@ -123,18 +133,53 @@ class B2Library:
         for entry in entries:
             fp = prompt_fingerprint(entry.prompt)
             if fp not in vectors:
-                vectors[fp] = self._load_or_create_sidecar(
-                    fp, entry.prompt, embedder, embedder_name
-                )
+                memo = self._vectors.get((embedder_name, fp))
+                if memo is None:
+                    memo = self._load_or_create_sidecar(
+                        fp, entry.prompt, embedder, embedder_name
+                    )
+                    self._remember(embedder_name, fp, memo)
+                vectors[fp] = memo
             out.append(dataclasses.replace(entry, embedding=vectors[fp]))
         return out
+
+    def _read_sidecar(self, key: str) -> bytes | None:
+        """The stored vector bytes, or None when storage is SURE there is none.
+
+        Asking `exists()` first cost a second billed transaction AND could not
+        answer the question: genblaze-s3 reports 403/AccessDenied as "does not
+        exist" (least-privilege keys get 403 for HEAD on absent keys), and a B2
+        transaction cap denies reads with exactly that. So a capped bucket read
+        as an empty cache, and the caller's response to an empty cache is to
+        pay for a new embedding and write it -- per prompt, per request, with
+        nothing in the response saying anything was wrong. Only a typed
+        NOT_FOUND is absence; every other failure is refused upward, because a
+        storage failure is never a fact about the business.
+        """
+        try:
+            # Annotated: the package's lazy export surface types backend
+            # methods as Any (genblaze #55), and Any would silently propagate.
+            raw: bytes = self._backend.get(key)
+            return raw
+        except StorageError as e:
+            if e.error_code == StorageErrorCode.NOT_FOUND:
+                return None
+            raise
+
+    def _remember(self, embedder_name: str, fp: str, vector: tuple[float, ...]) -> None:
+        if len(self._vectors) >= self._vector_cache_max:
+            # Insertion-ordered: drop the oldest. Eviction only costs a re-read,
+            # never correctness, so the simplest policy is the right one here.
+            self._vectors.pop(next(iter(self._vectors)))
+        self._vectors[(embedder_name, fp)] = vector
 
     def _load_or_create_sidecar(
         self, fp: str, prompt: str, embedder: Embedder, embedder_name: str
     ) -> tuple[float, ...]:
         key = f"{self._prefix}/embeddings/{fp}.json"
-        if self._backend.exists(key):
-            doc = json.loads(self._backend.get(key))
+        raw = self._read_sidecar(key)
+        if raw is not None:
+            doc = json.loads(raw)
             if doc.get("embedder") != embedder_name:
                 # Vectors from different embedders live in different spaces;
                 # comparing them yields garbage similarities. Fail loudly.

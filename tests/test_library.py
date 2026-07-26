@@ -15,12 +15,30 @@ from typing import Any
 # Deep imports: the package's lazy __getattr__ export surface types as Any
 # (genblaze issue #55), and mypy strict refuses to subclass Any. The defining
 # modules carry real types.
+import pytest
 from genblaze_core.storage.base import StorageBackend
+from genblaze_core.storage.errors import StorageError, StorageErrorCode
 from genblaze_core.storage.types import FileEntry, ListPage
 
 from reprise.embed import HashEmbedder, prompt_fingerprint
 from reprise.library import B2Library
+from reprise.model import LibraryEntry
 from tests.test_ingest import manifest_dict, rehash
+
+
+def library_entry(prompt: str) -> LibraryEntry:
+    return LibraryEntry(
+        asset_id="a1",
+        prompt=prompt,
+        modality="image",
+        sha256="0" * 64,
+        storage_key="reprise/assets/a1.png",
+        cost_usd=0.04,
+        provider="gemini",
+        model="gemini-2.5-flash-image",
+        run_id="run-1",
+        created_at=datetime(2026, 7, 26, tzinfo=UTC),
+    )
 
 
 class MemoryBackend(StorageBackend):
@@ -47,7 +65,18 @@ class MemoryBackend(StorageBackend):
         # Counted: B2 charges per object read (Class B), and the whole point of
         # the index work is that a steady-state request performs almost none.
         self.gets += 1
-        return self.objects[key]
+        try:
+            return self.objects[key]
+        except KeyError:
+            # Typed like the real backend. A double that raised KeyError let
+            # callers "handle absence" with a bare except, which is what made a
+            # capped bucket indistinguishable from an empty cache in production.
+            raise StorageError(
+                f"no such key: {key}",
+                error_code=StorageErrorCode.NOT_FOUND,
+                status_code=404,
+                operation="get",
+            ) from None
 
     def exists(self, key: str) -> bool:
         return key in self.objects
@@ -210,3 +239,80 @@ def test_a_cached_scan_expires() -> None:
     lib.scan()
 
     assert backend.gets > gets
+
+
+def test_sidecar_vectors_are_not_re_read_on_every_request() -> None:
+    """The scan cache covered manifests and left the sidecars uncapped.
+
+    `scan()` caches the projection, but the vectors are attached afterwards, so
+    every non-exact request still paid one HEAD plus one GET per distinct
+    prompt in the library -- the same O(library) billed read the cap outage was
+    caused by, on the same hot path, just one call further down. A sidecar is
+    content-addressed by prompt fingerprint and never rewritten, so within a
+    process it can be read once and remembered.
+    """
+    backend = seeded_backend()
+    lib = B2Library(backend, prefix="reprise", clock=lambda: 1000.0)
+    embedder = HashEmbedder()
+    entries = lib.scan()
+    lib.ensure_embeddings(entries, embedder)
+
+    gets_after_first = backend.gets
+    second = lib.ensure_embeddings(entries, embedder)
+
+    assert backend.gets == gets_after_first  # a warm process re-reads nothing
+    assert all(e.embedding for e in second)
+
+
+class CappedBackend(MemoryBackend):
+    """B2 with its transaction cap exhausted, as the S3 layer surfaces it.
+
+    Reads fail with 403/AccessDenied, and genblaze-s3's `exists()` deliberately
+    reports 403 as "does not exist" (least-privilege keys get 403 for HEAD on
+    absent keys). So an outage is indistinguishable from an empty cache to any
+    caller that asks `exists()` first -- which is how a storage failure turns
+    into a bill.
+    """
+
+    def exists(self, key: str) -> bool:
+        return False
+
+    def get(self, key: str) -> bytes:
+        self.gets += 1
+        raise StorageError(
+            "Cannot download file, download bandwidth or transaction (Class B) "
+            "cap exceeded",
+            error_code=StorageErrorCode.ACCESS_DENIED,
+            status_code=403,
+            operation="get",
+        )
+
+
+class CountingEmbedder(HashEmbedder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def embed(self, prompt: str) -> tuple[float, ...]:
+        self.calls += 1
+        return super().embed(prompt)
+
+
+def test_an_unreadable_sidecar_is_not_treated_as_a_missing_one() -> None:
+    """A storage failure must never be read as "this vector was never made".
+
+    Absence means embed it and store it; that is a paid API call. If the read
+    failed because the bucket is capped or the key is denied, embedding again
+    spends money to recompute a vector that already exists, on every request,
+    invisibly. Only a typed not-found may authorise that spend.
+    """
+    backend = CappedBackend()
+    lib = B2Library(backend, prefix="reprise", clock=lambda: 1000.0)
+    embedder = CountingEmbedder()
+    entry = library_entry("a red bicycle against a white wall")
+
+    with pytest.raises(StorageError):
+        lib.ensure_embeddings([entry], embedder)
+
+    assert embedder.calls == 0  # nothing was re-embedded on a blind read
+    assert not [k for k in backend.objects if "/embeddings/" in k]
