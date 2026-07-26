@@ -1,0 +1,38 @@
+{"category": "exact_repeat", "library": "a red bicycle against a white wall", "request": "a red bicycle against a white wall", "should": "reuse"}
+{"category": "exact_repeat", "library": "a red bicycle against a white wall", "request": "A RED  Bicycle   against a White Wall ", "should": "reuse"}
+{"category": "exact_repeat", "library": "minimalist product shot of a ceramic coffee mug on oak table", "request": "Minimalist product shot of a ceramic coffee mug on oak table", "should": "reuse"}
+{"category": "exact_repeat", "library": "drone shot soaring over a coastal city at golden hour", "request": "drone shot soaring over a coastal city at golden hour", "should": "reuse"}
+{"category": "exact_repeat", "library": "flat-lay of autumn clothing collection on linen background", "request": "flat-lay of  autumn clothing collection on linen background", "should": "reuse"}
+{"category": "exact_repeat", "library": "upbeat 30 second synth jingle for a tech product launch", "request": "Upbeat 30 second synth jingle for a tech product launch", "should": "reuse"}
+{"category": "equivalent", "library": "a red bicycle against a white wall", "request": "a red bicycle in front of a white wall", "should": "reuse"}
+{"category": "equivalent", "library": "minimalist product shot of a ceramic coffee mug on oak table", "request": "clean product photo of a ceramic coffee mug on an oak table", "should": "reuse"}
+{"category": "equivalent", "library": "drone shot soaring over a coastal city at golden hour", "request": "aerial drone footage over a coastal city at golden hour", "should": "reuse"}
+{"category": "equivalent", "library": "a golden retriever puppy playing in fallen leaves", "request": "golden retriever puppy playing in autumn leaves", "should": "reuse"}
+{"category": "equivalent", "library": "modern kitchen interior with marble countertops, morning light", "request": "modern kitchen interior with marble counters in morning light", "should": "reuse"}
+{"category": "equivalent", "library": "smiling barista handing a customer a latte across the counter", "request": "a smiling barista passes a latte to a customer over the counter", "should": "reuse"}
+{"category": "equivalent", "library": "city skyline at night with light trails from traffic", "request": "night skyline of a city with car light trails", "should": "reuse"}
+{"category": "equivalent", "library": "watercolor illustration of a lighthouse on rocky cliffs", "request": "watercolor painting of a lighthouse on a rocky cliff", "should": "reuse"}
+{"category": "equivalent", "library": "calm acoustic guitar background music for a travel vlog", "request": "relaxed acoustic guitar backing track for a travel vlog", "should": "reuse"}
+{"category": "equivalent", "library": "close-up of hands typing on a mechanical keyboard, shallow depth", "request": "closeup of hands typing on a mechanical keyboard with shallow depth of field", "should": "reuse"}
+{"category": "attribute_swap", "library": "a red bicycle against a white wall", "request": "a blue bicycle against a white wall", "should": "generate"}
+{"category": "attribute_swap", "library": "a red bicycle against a white wall", "request": "a red motorcycle against a white wall", "should": "generate"}
+{"category": "attribute_swap", "library": "a golden retriever puppy playing in fallen leaves", "request": "two golden retriever puppies playing in fallen leaves", "should": "generate"}
+{"category": "attribute_swap", "library": "minimalist product shot of a ceramic coffee mug on oak table", "request": "minimalist product shot of a glass coffee mug on oak table", "should": "generate"}
+{"category": "attribute_swap", "library": "drone shot soaring over a coastal city at golden hour", "request": "drone shot soaring over a coastal city at midnight", "should": "generate"}
+{"category": "attribute_swap", "library": "modern kitchen interior with marble countertops, morning light", "request": "rustic kitchen interior with marble countertops, morning light", "should": "generate"}
+{"category": "attribute_swap", "library": "city skyline at night with light trails from traffic", "request": "city skyline at sunrise with light trails from traffic", "should": "generate"}
+{"category": "attribute_swap", "library": "watercolor illustration of a lighthouse on rocky cliffs", "request": "oil painting of a lighthouse on rocky cliffs", "should": "generate"}
+{"category": "attribute_swap", "library": "upbeat 30 second synth jingle for a tech product launch", "request": "melancholy 30 second piano piece for a tech product launch", "should": "generate"}
+{"category": "attribute_swap", "library": "smiling barista handing a customer a latte across the counter", "request": "frowning barista handing a customer a latte across the counter", "should": "generate"}
+{"category": "same_domain", "library": "a red bicycle against a white wall", "request": "a vintage bicycle shop storefront at dusk", "should": "generate"}
+{"category": "same_domain", "library": "minimalist product shot of a ceramic coffee mug on oak table", "request": "overhead shot of a full espresso bar setup with beans and tamper", "should": "generate"}
+{"category": "same_domain", "library": "drone shot soaring over a coastal city at golden hour", "request": "street-level timelapse of pedestrians in a coastal city", "should": "generate"}
+{"category": "same_domain", "library": "a golden retriever puppy playing in fallen leaves", "request": "a tabby cat sleeping on a windowsill in the sun", "should": "generate"}
+{"category": "same_domain", "library": "modern kitchen interior with marble countertops, morning light", "request": "cozy reading nook with built-in bookshelves and armchair", "should": "generate"}
+{"category": "same_domain", "library": "city skyline at night with light trails from traffic", "request": "quiet suburban street under fresh snow at dawn", "should": "generate"}
+{"category": "same_domain", "library": "calm acoustic guitar background music for a travel vlog", "request": "energetic drum and bass track for a gaming montage", "should": "generate"}
+{"category": "unrelated", "library": "a red bicycle against a white wall", "request": "quarterly revenue forecast spreadsheet", "should": "generate"}
+{"category": "unrelated", "library": "minimalist product shot of a ceramic coffee mug on oak table", "request": "abstract fractal pattern in neon colors", "should": "generate"}
+{"category": "unrelated", "library": "drone shot soaring over a coastal city at golden hour", "request": "macro photo of a snowflake on dark wool", "should": "generate"}
+{"category": "unrelated", "library": "upbeat 30 second synth jingle for a tech product launch", "request": "recording of rainfall on a tin roof for sleep", "should": "generate"}
+{"category": "unrelated", "library": "a golden retriever puppy playing in fallen leaves", "request": "blueprint diagram of a suspension bridge", "should": "generate"}
