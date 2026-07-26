@@ -10,6 +10,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from reprise.webapp import build_production_app  # noqa: E402
+from reprise.webapp import build_production_app
 
 app = build_production_app()
