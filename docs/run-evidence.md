@@ -2,6 +2,41 @@
 
 All timestamps PT. Every claim below is a pasted probe result, not a paraphrase.
 
+## 2026-07-26 ~09:00 - Object Lock binds (after a probe correction worth reading)
+
+First probe asserted the naive observable (unversioned delete should fail) and
+reported "LOCK DID NOT BIND: delete succeeded". That was the PROBE wrong, not
+the control: on a versioned bucket an unversioned delete writes a delete
+MARKER and reports success; the locked bytes are untouched. The lock's real
+bind point is the version. Corrected probe output, live bucket:
+
+```
+locked ledger record written: reprise-probe/ledger/20260726T155906...-94e9e427.json
+  unversioned delete -> delete marker only; locked version survives
+  retention on version: GOVERNANCE until 2026-07-26 16:02:06+00:00
+  version delete refused: AccessDenied (DeleteObject on VersionId)
+  delete marker removed -> record recovered and readable
+ALL LIVE PROBES PASSED
+```
+
+Product consequence, stated honestly: a plain delete can HIDE a ledger record
+from naive listings (tamper-EVIDENT, not tamper-proof); the record is always
+recoverable and the locked version undeletable until retention expires. The
+app's audit view must read through delete markers.
+
+## 2026-07-26 ~08:55 - Gemini embedding calibration (policy-critical)
+
+```
+gemini-embedding-001 dims=3072
+  red-vs-blue same scene : cosine=0.9182   <- REVIEW band, NOT auto-reuse
+  vs unrelated           : cosine=0.4763   <- GENERATE
+  normalized repeat      : cosine=1.0000   <- exact path, never embedded twice
+```
+
+MANIFEST_OPENAI_API_KEY is a Manifest-gateway key (`mnfst_...`), rejected by
+api.openai.com with a verbatim 401; Manifest's /v1/embeddings returns 404
+(gateway has no embeddings route). Hence Gemini as default embedder.
+
 ## 2026-07-26 ~08:20 - Genblaze -> ObjectStorageSink -> real B2, verified
 
 Full pipeline against the live bucket (`reprise-vault-9315d5`, us-west-004,
