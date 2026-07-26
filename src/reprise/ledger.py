@@ -24,6 +24,7 @@ Design notes:
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -36,6 +37,7 @@ from reprise.embed import prompt_fingerprint
 from reprise.model import Decision, Verdict
 
 LEDGER_SCHEMA = 1
+log = logging.getLogger("reprise.ledger")
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +53,33 @@ class Scoreboard:
     @property
     def decisions(self) -> int:
         return self.reuses + self.reviews + self.generates
+
+
+def _fold(base: Scoreboard, docs: list[dict[str, Any]]) -> Scoreboard:
+    """Add records to a running total. The one place a record is scored."""
+    reuses, reviews = base.reuses, base.reviews
+    generates, accepts = base.generates, base.accepts
+    saved = base.saved_usd
+    for doc in docs:
+        kind = doc.get("kind")
+        if kind in ("reserve_generate", "reserve_embed"):
+            continue  # intents, not outcomes: never scored
+        if kind == "accept":
+            accepts += 1
+            saved += float(doc.get("saved_usd", 0.0))
+            continue
+        v = doc.get("verdict")
+        if v == Verdict.REUSE.value:
+            reuses += 1
+            saved += float(doc.get("saved_usd", 0.0))
+        elif v == Verdict.REVIEW.value:
+            reviews += 1
+        elif v == Verdict.GENERATE.value:
+            generates += 1
+    return Scoreboard(
+        reuses=reuses, reviews=reviews, generates=generates,
+        accepts=accepts, saved_usd=round(saved, 6),
+    )
 
 
 class Ledger:
@@ -69,6 +98,7 @@ class Ledger:
         self._retain_days = retain_days
         self._clock = clock or (lambda: datetime.now(UTC))
         self._seq = 0
+        self._snapshot_key = f"{self._prefix}/index/scoreboard.json"
 
     @property
     def retention(self) -> tuple[str, int | None]:
@@ -257,36 +287,125 @@ class Ledger:
         is computed from, with no second database to fall out of sync. This is
         still read-then-act, so two simultaneous accepts of one offer can both
         pass; the check bounds replay, it does not serialize it.
+
+        Only the accept partitions are read, not the whole ledger: acceptances
+        are rare, and reading every decision to find them was part of what
+        exhausted the account's transaction cap. Records written before the
+        partitioned layout predate `review_id` entirely, so they cannot name an
+        offer and cannot collide with one.
         """
-        return {
-            str(doc.get("review_id"))
-            for doc in self.entries()
-            if doc.get("kind") == "accept" and doc.get("review_id")
-        }
+        ids: set[str] = set()
+        for key in self._ledger_keys():
+            if "/accept/" not in key:
+                continue
+            try:
+                doc = json.loads(self._backend.get(key))
+            except Exception as e:
+                # An unreadable accept record means we cannot prove this offer
+                # is unspent, and the caller treats that as a refusal.
+                raise RuntimeError(f"accept history unreadable at {key}: {e}") from e
+            if doc.get("review_id"):
+                ids.add(str(doc["review_id"]))
+        return ids
+
+    def _ledger_keys(self) -> list[str]:
+        keys: list[str] = []
+        token: str | None = None
+        while True:
+            page = self._backend.list(f"{self._prefix}/ledger/", continuation_token=token)
+            keys.extend(fe.key for fe in page.entries)
+            token = page.next_token
+            if token is None:
+                break
+        return keys
+
+    def _day_of(self, key: str) -> str:
+        """The partition day a ledger key belongs to.
+
+        Keys written before the date/kind partition sit at the flat root; they
+        are treated as the earliest possible day so they fold into the first
+        snapshot and are never re-read.
+        """
+        rest = key[len(f"{self._prefix}/ledger/") :]
+        head = rest.split("/", 1)[0]
+        return head if len(head) == 8 and head.isdigit() else "00000000"
+
+    def _load_snapshot(self) -> tuple[str, Scoreboard]:
+        try:
+            doc = json.loads(self._backend.get(self._snapshot_key))
+            if int(doc.get("schema", 0)) != LEDGER_SCHEMA:
+                return ("", Scoreboard())
+            t = doc["totals"]
+            return (
+                str(doc["through_day"]),
+                Scoreboard(
+                    reuses=int(t["reuses"]),
+                    reviews=int(t["reviews"]),
+                    generates=int(t["generates"]),
+                    accepts=int(t["accepts"]),
+                    saved_usd=float(t["saved_usd"]),
+                ),
+            )
+        except Exception:
+            # No snapshot, or one this version cannot read: recompute from the
+            # ledger. The snapshot is a cache of immutable history, never the
+            # authority, so losing it costs reads and nothing else.
+            return ("", Scoreboard())
 
     def summarize(self) -> Scoreboard:
-        reuses = reviews = generates = accepts = 0
-        saved = 0.0
-        for doc in self.entries():
-            kind = doc.get("kind")
-            if kind in ("reserve_generate", "reserve_embed"):
-                continue  # intents, not outcomes: never scored
-            if kind == "accept":
-                accepts += 1
-                saved += float(doc.get("saved_usd", 0.0))
+        """Totals over the whole ledger, reading only what can still change.
+
+        Completed days are immutable, so they are folded once into a snapshot
+        object and never read again; today is always recomputed live. Reading
+        every record on every call cost O(history) BILLED reads per cold
+        instance and grew without bound, which is how the account's transaction
+        cap was reached (docs/solutions/2026-07-26-b2-class-b-transaction-cap.md).
+        The ledger remains the authority: delete the snapshot and the next call
+        rebuilds it.
+        """
+        today = self._clock().strftime("%Y%m%d")
+        through, base = self._load_snapshot()
+        pending: dict[str, list[str]] = {}
+        for key in self._ledger_keys():
+            day = self._day_of(key)
+            if day <= through:
                 continue
-            v = doc.get("verdict")
-            if v == Verdict.REUSE.value:
-                reuses += 1
-                saved += float(doc.get("saved_usd", 0.0))
-            elif v == Verdict.REVIEW.value:
-                reviews += 1
-            elif v == Verdict.GENERATE.value:
-                generates += 1
-        return Scoreboard(
-            reuses=reuses,
-            reviews=reviews,
-            generates=generates,
-            accepts=accepts,
-            saved_usd=round(saved, 6),
-        )
+            pending.setdefault(day, []).append(key)
+
+        closed_days = sorted(d for d in pending if d < today)
+        board = base
+        for day in [*closed_days, *(d for d in sorted(pending) if d >= today)]:
+            docs = [json.loads(self._backend.get(k)) for k in pending[day]]
+            board = _fold(board, docs)
+            if day == (closed_days[-1] if closed_days else None):
+                self._write_snapshot(day, board)
+        return board
+
+    def _write_snapshot(self, through_day: str, board: Scoreboard) -> None:
+        """Persist totals through a day that can no longer change.
+
+        Never covers today: freezing a day still being written would stop the
+        scoreboard moving. Written without a lock, because a cache that cannot
+        be replaced is a liability, not a guarantee.
+        """
+        try:
+            self._backend.put(
+                self._snapshot_key,
+                json.dumps(
+                    {
+                        "schema": LEDGER_SCHEMA,
+                        "through_day": through_day,
+                        "totals": {
+                            "reuses": board.reuses,
+                            "reviews": board.reviews,
+                            "generates": board.generates,
+                            "accepts": board.accepts,
+                            "saved_usd": board.saved_usd,
+                        },
+                    }
+                ).encode(),
+                content_type="application/json",
+            )
+        except Exception as e:  # a cache write must never fail a read
+            log.warning("scoreboard snapshot write failed: %s", e)
+

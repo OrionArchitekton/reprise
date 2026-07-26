@@ -166,3 +166,42 @@ def test_counting_todays_reservations_reads_no_objects() -> None:
     assert led.spend_reservations_today(("reserve_generate",)) == 2
     assert led.spend_reservations_today(("reserve_embed",)) == 1
     assert b.gets == 0
+
+
+def test_scoreboard_folds_completed_days_into_a_snapshot() -> None:
+    """A cold instance must not re-read the whole ledger to show a total.
+
+    summarize() read every record ever written, so each new serverless
+    instance paid O(history) billed reads before it could render the page, and
+    the cost grew forever. Completed days are immutable, so they fold once into
+    a snapshot; only today is ever re-read.
+    """
+    b = LockRecordingBackend()
+    day1 = datetime(2026, 7, 25, 12, 0, tzinfo=UTC)
+    now = [day1]
+    led = Ledger(b, prefix="reprise", clock=lambda: now[0])
+    led.record(reuse_decision(cost=0.05))
+    led.record(reuse_decision(cost=0.05))
+
+    now[0] = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+    led.record(reuse_decision(cost=0.05))
+    first = led.summarize()          # folds 07-25, reads 07-26 live
+    b.gets = 0
+    second = led.summarize()
+
+    assert first.reuses == 3 and first.saved_usd == pytest.approx(0.15)
+    assert second == first
+    # Second call: the snapshot plus today's single record, never yesterday's.
+    assert b.gets <= 2, f"re-read too much: {b.gets} objects"
+
+
+def test_a_snapshot_never_covers_a_day_still_being_written() -> None:
+    """Folding today would freeze a total that is still changing."""
+    b = LockRecordingBackend()
+    led = Ledger(b, prefix="reprise", clock=fixed_clock)
+    led.record(reuse_decision(cost=0.05))
+    led.summarize()
+
+    led.record(reuse_decision(cost=0.05))
+
+    assert led.summarize().reuses == 2

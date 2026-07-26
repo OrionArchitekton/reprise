@@ -108,7 +108,7 @@ export ELEVENLABS_API_KEY=...
 uvicorn "reprise.webapp:build_production_app" --factory --app-dir src --port 8000
 ```
 
-Then open http://localhost:8000. `pytest` runs the 83-test suite offline
+Then open http://localhost:8000. `pytest` runs the 85-test suite offline
 (a real Genblaze pipeline against an in-memory storage backend; only the
 provider network calls are mocked). CI checks that this number still matches
 what pytest collects, so it cannot quietly go stale. Live integration probes,
@@ -136,9 +136,18 @@ which spend a few cents, are `tools/live_probe.py` and `tools/live_generate.py`.
   is the record of which offers are spent. That check is still read-then-act,
   so two simultaneous accepts of one offer could both pass; it bounds replay,
   it does not serialize it. There is no user accounts system in the demo.
-- Demo-scale scans re-list the bucket per request; a production deployment
-  would maintain an index (Genblaze's `ParquetSink` tables are the natural
-  seed).
+- Reads are bounded rather than proportional to history: the ledger is
+  partitioned by day and record kind, so a cap check is a listing; completed
+  days fold once into a scoreboard snapshot and are never read again; the
+  library projection is cached per process and invalidated on write. The ledger
+  stays the authority, so deleting the snapshot just costs a rebuild. This was
+  learned the hard way, in production: see
+  [docs/solutions/2026-07-26-b2-class-b-transaction-cap.md](docs/solutions/2026-07-26-b2-class-b-transaction-cap.md).
+- If the library cannot be READ, Reprise refuses to decide (HTTP 503) rather
+  than treating an empty projection as "you do not own this" and generating. A
+  manifest that reads fine but does not parse still only skips itself.
+- A cold instance still pays one full library scan; a persisted library index
+  (Genblaze's `ParquetSink` tables are the natural seed) is the next step.
 
 ## License
 
