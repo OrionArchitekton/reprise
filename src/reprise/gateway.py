@@ -76,9 +76,16 @@ class Gateway:
 
     # -- the one entry point ----------------------------------------------
 
-    def handle(self, request: Request) -> GatewayResult:
-        entries = self._library.scan()
+    def preview(self, request: Request) -> Decision:
+        """The verdict alone: no generation, no ledger write, no side effects.
 
+        Lets callers gate spend (rate caps, budget checks) BEFORE committing:
+        a REUSE/REVIEW preview is always safe to act on, a GENERATE preview
+        tells the caller that proceeding will cost money.
+        """
+        return self._decide(request, self._library.scan())
+
+    def _decide(self, request: Request, entries: list[LibraryEntry]) -> Decision:
         # Free path first: exact match needs no embedding call.
         decision = decide(request, entries)
         if decision.verdict is not Verdict.REUSE:
@@ -86,6 +93,10 @@ class Gateway:
             request_vec = self._embedder.embed(request.prompt)
             candidates = score_candidates(request, request_vec, embedded)
             decision = classify(request, candidates)
+        return decision
+
+    def handle(self, request: Request) -> GatewayResult:
+        decision = self._decide(request, self._library.scan())
 
         if decision.verdict is Verdict.REUSE:
             assert decision.candidate is not None

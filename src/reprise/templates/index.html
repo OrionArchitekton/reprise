@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reprise - reuse before you generate</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #21262d; --text: #e6edf3;
+    --dim: #8b949e; --green: #3fb950; --amber: #d29922; --blue: #58a6ff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.5 -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.5px; }
+  h1 small { color: var(--dim); font-weight: 400; font-size: 15px; margin-left: 10px; }
+  .board { display: flex; gap: 12px; margin: 22px 0; flex-wrap: wrap; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 12px 18px; min-width: 128px; }
+  .stat b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--dim); font-size: 13px; }
+  .stat.saved b { color: var(--green); }
+  form { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+         padding: 18px; display: grid; gap: 12px; }
+  textarea { background: var(--bg); color: var(--text); border: 1px solid var(--line);
+             border-radius: 8px; padding: 10px 12px; font: inherit; resize: vertical;
+             min-height: 64px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  select, button { font: inherit; border-radius: 8px; border: 1px solid var(--line);
+                   background: var(--bg); color: var(--text); padding: 8px 14px; }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #04121f;
+                   font-weight: 600; cursor: pointer; }
+  button.primary[disabled] { opacity: 0.5; cursor: wait; }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; }
+  .presets button { font-size: 13px; color: var(--dim); cursor: pointer; }
+  #result { margin-top: 20px; }
+  .card { border-radius: 12px; padding: 18px; border: 1px solid var(--line);
+          background: var(--panel); }
+  .card.reuse   { border-left: 6px solid var(--green); }
+  .card.review  { border-left: 6px solid var(--amber); }
+  .card.generate{ border-left: 6px solid var(--blue); }
+  .verdict { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; }
+  .card.reuse .verdict { color: var(--green); }
+  .card.review .verdict { color: var(--amber); }
+  .card.generate .verdict { color: var(--blue); }
+  .headline { font-size: 20px; font-weight: 650; margin: 6px 0 2px; }
+  .reason { color: var(--dim); font-size: 14px; font-family: var(--mono); }
+  .asset img { max-width: 100%; border-radius: 8px; margin-top: 12px; }
+  .asset audio { width: 100%; margin-top: 12px; }
+  .meta { color: var(--dim); font-size: 13px; font-family: var(--mono); margin-top: 10px;
+          word-break: break-all; }
+  .actions { margin-top: 14px; display: flex; gap: 10px; }
+  footer { color: var(--dim); font-size: 13px; margin-top: 40px; }
+  footer a { color: var(--blue); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Reprise <small>check what you already own before you pay to generate</small></h1>
+
+  <div class="board" id="board">
+    <div class="stat"><b id="s-decisions">{{ decisions }}</b><span>decisions</span></div>
+    <div class="stat"><b id="s-reuses">{{ scoreboard.reuses + scoreboard.accepts }}</b><span>assets reused</span></div>
+    <div class="stat saved"><b id="s-saved">${{ '%.2f' % scoreboard.saved_usd }}</b><span>not re-spent</span></div>
+  </div>
+
+  <form id="ask">
+    <textarea id="prompt" name="prompt" placeholder="Describe the asset you need, e.g. a red bicycle leaning against a white brick wall, product photo" required></textarea>
+    <div class="row">
+      <select id="modality" name="modality">
+        <option value="image">image</option>
+        <option value="audio">audio</option>
+      </select>
+      <button class="primary" id="go" type="submit">Do I already own this?</button>
+    </div>
+    <div class="presets">
+      <button type="button" data-fill="a red bicycle leaning against a white brick wall, product photo">try an exact repeat</button>
+      <button type="button" data-fill="a crimson bicycle propped against a white brick wall, product shot">try a near-duplicate</button>
+      <button type="button" data-fill="a lighthouse on a cliff in a thunderstorm, oil painting">try something new</button>
+    </div>
+  </form>
+
+  <div id="result">
+  {% if demo %}
+    <div class="card reuse">
+      <div class="verdict">reuse</div>
+      <div class="headline">You already own this. Saved $0.04.</div>
+      <div class="reason">exact prompt match against run 5191... (gemini-image/gemini-2.5-flash-image)</div>
+      <div class="meta">sha256 b5f8a11ffe64d4f0... &middot; served from Backblaze B2, nothing generated</div>
+    </div>
+  {% endif %}
+  </div>
+
+  <footer>
+    Decisions are recorded in an <b>Object-Lock ledger</b> on Backblaze B2 and every
+    asset carries a Genblaze provenance manifest.
+    Near-matches auto-serve only above 0.97 similarity; 0.85&ndash;0.97 goes to human
+    review. Measured on a labeled set: 0/17 false auto-reuse
+    (<a href="https://github.com/OrionArchitekton/reprise/blob/main/eval/report.md">eval report</a>).
+  </footer>
+</main>
+
+<script>
+const form = document.getElementById("ask");
+const result = document.getElementById("result");
+const go = document.getElementById("go");
+document.querySelectorAll(".presets button").forEach(b =>
+  b.addEventListener("click", () => { document.getElementById("prompt").value = b.dataset.fill; }));
+
+function card(d) {
+  const cls = d.verdict;
+  let head = "", body = "";
+  if (d.verdict === "reuse") {
+    head = `You already own this. Saved $${d.saved_usd.toFixed(2)}.`;
+  } else if (d.verdict === "review") {
+    head = `Close match found (${(d.candidate.similarity*100).toFixed(1)}% similar). Your call.`;
+    body = `<div class="actions">
+      <button class="primary" onclick='accept(${JSON.stringify(d.prompt)}, ${JSON.stringify(d.modality)}, ${JSON.stringify(d.candidate.asset_id)})'>
+        Use it (saves $${d.candidate.cost_usd.toFixed(2)})</button>
+      <button onclick="alert('Generation would proceed here; in the demo, rerun with a novel prompt.')">Generate fresh instead</button>
+    </div>`;
+  } else {
+    head = d.new_entry ? `Generated fresh via ${d.new_entry.provider} ($${d.new_entry.cost_usd.toFixed(2)}) and filed in your library.`
+                       : "Nothing close in your library.";
+  }
+  const media = d.serve_url
+    ? (d.modality === "audio"
+        ? `<div class="asset"><audio controls src="${d.serve_url}"></audio></div>`
+        : `<div class="asset"><img src="${d.serve_url}" alt=""></div>`)
+    : "";
+  const sha = (d.candidate && d.candidate.sha256) || (d.new_entry && d.new_entry.sha256) || "";
+  return `<div class="card ${cls}">
+    <div class="verdict">${d.verdict}</div>
+    <div class="headline">${head}</div>
+    <div class="reason">${d.reason}</div>
+    ${media}${body}
+    ${sha ? `<div class="meta">sha256 ${sha.slice(0,16)}... &middot; provenance manifest in B2</div>` : ""}
+  </div>`;
+}
+
+async function refreshBoard() {
+  const s = await (await fetch("/api/scoreboard")).json();
+  document.getElementById("s-decisions").textContent = s.decisions;
+  document.getElementById("s-reuses").textContent = s.reuses + s.accepts;
+  document.getElementById("s-saved").textContent = "$" + s.saved_usd.toFixed(2);
+}
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  go.disabled = true; go.textContent = "checking the library...";
+  try {
+    const resp = await fetch("/api/decide", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        prompt: document.getElementById("prompt").value,
+        modality: document.getElementById("modality").value,
+      }),
+    });
+    const data = await resp.json();
+    result.innerHTML = resp.ok
+      ? card(data)
+      : `<div class="card review"><div class="verdict">error</div><div class="reason">${data.detail}</div></div>`;
+    refreshBoard();
+  } finally { go.disabled = false; go.textContent = "Do I already own this?"; }
+});
+
+async function accept(prompt, modality, asset_id) {
+  const resp = await fetch("/api/accept", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({prompt, modality, asset_id}),
+  });
+  const data = await resp.json();
+  if (resp.ok) { result.innerHTML = card({...data, verdict: "reuse"}); refreshBoard(); }
+}
+</script>
+</body>
+</html>

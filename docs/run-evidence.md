@@ -2,6 +2,37 @@
 
 All timestamps PT. Every claim below is a pasted probe result, not a paraphrase.
 
+## 2026-07-26 ~10:05 - LIVE multi-provider generation proof (real spend)
+
+tools/live_generate.py against the real bucket, real providers:
+
+```
+== 1. novel image request (expects GENERATE, real Imagen spend) ==
+  generated: reprise/assets/b5/f8/b5f8a11f...cb5f785c.png
+  sha256=b5f8a11ffe64d4f0... provider=gemini-image model=gemini-2.5-flash-image cost_usd=0.0387
+== 2. exact repeat (expects REUSE, zero spend) ==
+  reused 51919313-...-img-0, saved_usd=0.0387
+== 3. novel audio request (expects GENERATE via ElevenLabs) ==
+  generated: reprise/assets/c7/02/c7027ed2...8cfd8a81.mp3
+  provider=elevenlabs-tts model=eleven_flash_v2_5
+== ledger scoreboard: 4 decisions, 1 reuse, saved_usd=0.0387 ==
+LIVE GENERATION PROOF PASSED
+```
+
+(The 4th ledger record is an early REVIEW decision from the first probe run,
+immutable by design; the library's mock-era spike entries were delete-marked
+before this run so only real-provider assets remain visible.)
+
+Model-id gauntlet, all live-probed the same hour:
+- SDK preflight killed `imagen-3.0-fast-generate-001` BEFORE spend ("upstream
+  probe returned DEAD") - the registry-decoupling probe working as designed.
+- The live catalog lists imagen-4.0-{generate,ultra,fast}; every one 404s
+  "no longer available to new users" for this (new) key on :predict.
+- `gemini-2.5-flash-image` generateContent returned a real PNG (2.4MB b64).
+=> custom `GeminiImageProvider` (SyncProvider seam) is the image path; the
+stock google connector's `^imagen-` family is unusable on new keys (filed as
+SDK feedback candidate).
+
 ## 2026-07-26 ~09:00 - Object Lock binds (after a probe correction worth reading)
 
 First probe asserted the naive observable (unversioned delete should fail) and

@@ -5,6 +5,12 @@ description = "Reuse layer for generative media: check what you already own befo
 requires-python = ">=3.11"
 dependencies = [
     "genblaze>=0.4.4",
+    "genblaze-google>=0.3.3",
+    "genblaze-elevenlabs>=0.3.2",
+    "elevenlabs>=2.6",
+    "fastapi>=0.116",
+    "jinja2>=3.1",
+    "uvicorn[standard]>=0.30",
 ]
 
 [project.optional-dependencies]
