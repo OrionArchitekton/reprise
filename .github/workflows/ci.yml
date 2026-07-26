@@ -31,3 +31,7 @@ jobs:
         # Regenerating the MD from the committed JSON must be byte-identical;
         # a hand edit to either file fails the build (pin for Phase 6.5).
         run: python tools/check_eval_freshness.py
+      - name: Gallery captions fit the field they are pasted into
+        # Devpost truncates a long caption with no warning and no preview, so
+        # the limit has to be checked before submit, not discovered after.
+        run: python tools/check_captions.py
