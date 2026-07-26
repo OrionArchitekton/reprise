@@ -148,7 +148,10 @@ def main() -> None:
         "A miss regenerates something owned: costs money, harms nobody.",
     ]
     for c in mr["cases"]:
-        lines.append(f"  - sim {c['similarity']}: '{c['request']}' regenerated despite '{c['library']}'")
+        lines.append(
+            f"  - sim {c['similarity']}: '{c['request']}' regenerated "
+            f"despite '{c['library']}'"
+        )
     lines.append("")
     REPORT_MD.write_text("\n".join(lines))
 
