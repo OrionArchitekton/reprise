@@ -1,6 +1,6 @@
 # Reprise
 
-**Check what you already own before you pay to generate it.**
+**Check what you already generated before you pay to generate it again.**
 
 Every generative-media team quietly regenerates assets it already paid for:
 the same product shot, the same jingle, the same hero image with the same
@@ -24,9 +24,13 @@ prompt ->  exact match?  ------ yes -> REUSE   (serve from B2, $0, saving booked
 ```
 
 Every decision is written to an **Object-Lock ledger** in B2 (GOVERNANCE
-retention): the savings scoreboard is recomputed from records nobody can edit
-or destroy while retention holds. Every generated asset carries Genblaze's
-provenance manifest, sha256-bound by `ObjectStorageSink`.
+retention, computed at each write): the savings scoreboard is recomputed from
+records nobody can edit or destroy while retention holds. Every generated asset
+carries Genblaze's provenance manifest, sha256-bound by `ObjectStorageSink`, and
+every result carries a **proof receipt**: run id, manifest key and canonical
+hash, content-addressed asset key, sha256, producing model, and the retention
+actually in force. Those are coordinates you can re-derive from the bucket, not
+a badge the app issues about itself.
 
 ## Measured, not promised
 
@@ -77,8 +81,16 @@ swaps land in front of a human, never silently on a customer.
   for Gemini-native image models (`gemini-2.5-flash-image`) -- written because
   every `imagen-*` tier now answers "no longer available to new users" on
   fresh API keys -- plus the stock `ElevenLabsTTSProvider` for audio;
-- `Manifest.verify()` semantics gate what is reusable: failed steps and
-  URL-only assets never enter the library.
+- **`Manifest.verify_hash()` gates admission**: a manifest whose payload no
+  longer matches its canonical hash is refused entirely, so editing a stored
+  run's prompt cannot point a popular prompt at bytes of someone's choosing.
+  Failed steps and URL-only assets are then filtered per asset, mirroring
+  `verify()` semantics without letting one URL-only asset disqualify a run's
+  properly bound ones;
+- **a model fallback chain**, because a slug in the catalog is not a slug you
+  are entitled to call (see the upstream issues below). If the pinned model
+  answers 404, the provider walks its chain and the manifest records the model
+  that actually produced the bytes.
 
 AI providers and models used: `gemini-2.5-flash-image` (image generation),
 `eleven_flash_v2_5` (ElevenLabs TTS), `gemini-embedding-001` (prompt
@@ -96,7 +108,7 @@ export ELEVENLABS_API_KEY=...
 uvicorn "reprise.webapp:build_production_app" --factory --app-dir src --port 8000
 ```
 
-Then open http://localhost:8000. `pytest` runs the 76-test suite offline
+Then open http://localhost:8000. `pytest` runs the 78-test suite offline
 (a real Genblaze pipeline against an in-memory storage backend; only the
 provider network calls are mocked). CI checks that this number still matches
 what pytest collects, so it cannot quietly go stale. Live integration probes,
@@ -117,8 +129,13 @@ which spend a few cents, are `tools/live_probe.py` and `tools/live_generate.py`.
   written before the provider call, so a spend is never uncounted, but the
   check is still read-then-act: a burst of concurrent requests can overshoot
   a cap by roughly the concurrency level before the reservations land.
-- Acceptance of a review candidate requires an HMAC capability token issued
-  in the review response; there is no user accounts system in the demo.
+- A review shows you the candidate asset before asking you to judge it, and
+  "generate fresh instead" really generates (it skips the library and pays).
+- Acceptance requires an HMAC capability token issued in the review response,
+  and each offer can be accepted once: the token names its offer and the ledger
+  is the record of which offers are spent. That check is still read-then-act,
+  so two simultaneous accepts of one offer could both pass; it bounds replay,
+  it does not serialize it. There is no user accounts system in the demo.
 - Demo-scale scans re-list the bucket per request; a production deployment
   would maintain an index (Genblaze's `ParquetSink` tables are the natural
   seed).

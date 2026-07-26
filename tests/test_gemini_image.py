@@ -112,3 +112,68 @@ def _bare_step() -> Step:
     step: Step = result.run.steps[0]
     step.assets.clear()
     return step
+
+
+def test_a_retired_primary_model_falls_back_and_the_manifest_records_which_ran(
+    tmp_path: Any,
+) -> None:
+    """A model id in the catalog is not a model you are allowed to call.
+
+    Google retired every Imagen tier for new API keys while still listing them
+    (genblaze#206), and it can do the same to a Gemini image tier. A pipeline
+    pinned to one slug dies when that happens, so the provider walks its
+    fallback chain, and the manifest must name the model that ACTUALLY produced
+    the bytes: a manifest claiming the retired model would be provenance that
+    describes a call which never happened.
+    """
+    tried: list[str] = []
+
+    def retire_the_primary(
+        url: str, body: bytes, headers: dict[str, str], timeout: float
+    ) -> dict[str, Any]:
+        model = url.rsplit("/", 1)[-1].split(":")[0]
+        tried.append(model)
+        if model == "gemini-2.5-flash-image":
+            raise urllib.error.HTTPError(
+                url, 404, "Not Found", None,  # type: ignore[arg-type]
+                __import__("io").BytesIO(
+                    b'{"error":{"message":"no longer available to new users"}}'
+                ),
+            )
+        return ok_transport(
+            url.replace(model, "gemini-2.5-flash-image"), body, headers, timeout
+        )
+
+    p = GeminiImageProvider(
+        api_key="k",
+        output_dir=tmp_path,
+        transport=retire_the_primary,
+        fallback_models=("gemini-3.1-flash-image",),
+    )
+
+    step = run_step(p)
+
+    assert tried == ["gemini-2.5-flash-image", "gemini-3.1-flash-image"]
+    assert step.model == "gemini-3.1-flash-image"
+    assert step.assets and step.assets[0].sha256 == hashlib.sha256(PNG).hexdigest()
+
+
+def test_every_model_failing_surfaces_the_last_upstream_message(tmp_path: Any) -> None:
+    """A chain that runs out must not swallow why. Silence here would look
+    exactly like a network blip and hide an entitlement change."""
+
+    def always_404(
+        url: str, body: bytes, headers: dict[str, str], timeout: float
+    ) -> dict[str, Any]:
+        raise urllib.error.HTTPError(
+            url, 404, "Not Found", None,  # type: ignore[arg-type]
+            __import__("io").BytesIO(b'{"error":{"message":"no longer available"}}'),
+        )
+
+    p = GeminiImageProvider(
+        api_key="k", output_dir=tmp_path, transport=always_404,
+        fallback_models=("gemini-3.1-flash-image",),
+    )
+
+    with pytest.raises(ProviderError, match="no longer available"):
+        p.generate(_bare_step())

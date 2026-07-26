@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Reprise - reuse before you generate</title>
+<title>Reprise - check what you already generated</title>
 <style>
   :root {
     --bg: #0d1117; --panel: #161b22; --line: #21262d; --text: #e6edf3;
@@ -64,7 +64,7 @@
 </head>
 <body>
 <main>
-  <h1>Reprise <small>check what you already own before you pay to generate</small></h1>
+  <h1>Reprise <small>check what you already generated before you pay to generate it again</small></h1>
 
   <div class="board" id="board">
     <div class="stat"><b id="s-decisions">{{ decisions }}</b><span>decisions</span></div>
@@ -100,8 +100,9 @@
   </div>
 
   <footer>
-    Decisions are recorded in an <b>Object-Lock ledger</b> on Backblaze B2 and every
-    asset carries a Genblaze provenance manifest.
+    The library is every asset your Genblaze runs stored in B2, projected from their
+    provenance manifests: a manifest that no longer matches its own hash is refused.
+    Decisions are recorded in an <b>Object-Lock ledger</b> on Backblaze B2.
     Near-matches auto-serve only at or above 0.97 similarity; 0.85 to 0.97 goes to
     human review. Measured on a labeled set: 0/17 false auto-reuse
     (<a href="https://github.com/OrionArchitekton/reprise/blob/main/eval/report.md">eval report</a>).

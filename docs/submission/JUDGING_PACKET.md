@@ -45,15 +45,35 @@ Stage One is pass/fail: must reasonably fit the theme and apply B2 + Genblaze.
 - Generation providers actually wired and live-proven: a CUSTOM Genblaze
   SyncProvider for gemini-2.5-flash-image (all imagen-* tiers are retired for
   new API keys - documented with verbatim 404s), and stock ElevenLabs TTS.
+- Two upstream SDK issues were filed from this build:
+  backblaze-labs/genblaze#206 (the Google family probe reports LIVE for slugs
+  that :predict rejects, so preflight passes and the run dies at call time) and
+  #205 (no provider for the Gemini-native image models a new key can call).
 - The Object Lock claim is scoped honestly: version deletes are refused by B2;
   an unversioned delete can HIDE a record behind a delete marker
   (tamper-evident, recoverable). docs/run-evidence.md records the probe
   correction that established this.
-- The public demo caps fresh generations per UTC day (429 before spend);
-  reuse/review stay available. Embedding calls are not capped (known).
+- TWO daily budgets are capped, both RESERVED before the money leaves (429
+  before spend, fail closed if the reservation cannot be written): fresh
+  generations, and decisions that have to embed. An exact repeat is free and
+  consumes neither. Reuse/review stay available when a cap binds.
+- Acceptance is authenticated by an HMAC capability token minted with the
+  review that offered it, and each offer can be accepted ONCE (the token names
+  its offer; the ledger records which offers are spent; a replay gets 409).
+- Ingest gates on Manifest.verify_hash(): a manifest edited after Genblaze
+  sealed it admits nothing. Per-asset rules (succeeded steps, sha256-bound
+  assets, prompted steps) then filter within a verified manifest.
+- Every result carries a proof receipt (run id, manifest key + canonical hash,
+  asset key, sha256, producing provider/model, original cost, retention in
+  force). A REVIEW serves the candidate so the human can see what they are
+  judging, and "generate fresh instead" really generates.
+- The image provider walks a model FALLBACK chain and the manifest records the
+  model that actually produced the bytes.
+- Object Lock retention is computed at each write, not at process start.
 - What is DEMOED vs DESIGNED: single-tenant demo; per-request bucket rescan
-  (an index is future work, ParquetSink named as the seed); acceptance is
-  unauthenticated in the demo.
+  (an index is future work, ParquetSink named as the seed); the cap and
+  replay checks are read-then-act, so a concurrent burst can overshoot by
+  roughly the concurrency level (disclosed in the README).
 - Everything in docs/run-evidence.md is a pasted probe output, never
   retro-edited; it includes two probe corrections (lock observable, model
   entitlement) kept deliberately.
