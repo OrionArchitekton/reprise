@@ -9,13 +9,18 @@ against this SDK); the live path is proven by tools/live_probe.py.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
-from genblaze_core import FileEntry, ListPage, StorageBackend
-from tests.test_ingest import manifest_dict
+# Deep imports: the package's lazy __getattr__ export surface types as Any
+# (genblaze issue #55), and mypy strict refuses to subclass Any. The defining
+# modules carry real types.
+from genblaze_core.storage.base import StorageBackend
+from genblaze_core.storage.types import FileEntry, ListPage
 
 from reprise.embed import HashEmbedder, prompt_fingerprint
 from reprise.library import B2Library
+from tests.test_ingest import manifest_dict
 
 
 class MemoryBackend(StorageBackend):
@@ -47,11 +52,16 @@ class MemoryBackend(StorageBackend):
 
     def list(self, prefix: str = "", *, max_keys: int = 1000,
              continuation_token: str | None = None) -> ListPage:
-        entries = [
-            FileEntry(key=k, size=len(v), last_modified=None, etag=None, storage_class=None)
+        entries = tuple(
+            FileEntry(
+                key=k,
+                size=len(v),
+                last_modified=datetime(2026, 7, 26, tzinfo=UTC),
+                etag=f"etag-{k}",
+            )
             for k, v in sorted(self.objects.items())
             if k.startswith(prefix)
-        ]
+        )
         return ListPage(entries=entries, next_token=None)
 
 
