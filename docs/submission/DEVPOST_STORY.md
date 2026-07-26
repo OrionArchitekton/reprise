@@ -114,6 +114,16 @@ while retention holds.
 - Provenance is only as good as what you refuse to admit. Failed steps and URL
   only assets never enter the library, because a manifest that cannot verify is
   worth less than no manifest at all.
+- A health check that touches nothing cannot see an outage of everything. Ours
+  stayed green while every page that read storage was down. The smoke check now
+  walks the ladder a visitor walks.
+- The sharpest lesson came from an outage we caused ourselves. Backblaze's daily
+  transaction cap tripped because every request re-read the whole ledger and the
+  whole library, so the cost grew with the data. Reads are now bounded to what
+  can still change. But the worse defect was what the outage revealed: with
+  manifests unreadable, the library looked EMPTY, and a reuse-first product
+  cheerfully paid to generate an asset it already owned. Absence of evidence had
+  been coded as evidence of absence. It now refuses instead, and says why.
 
 ## What's next for Reprise
 
