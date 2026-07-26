@@ -129,6 +129,12 @@ while retention holds.
   manifests unreadable, the library looked EMPTY, and a reuse-first product
   cheerfully paid to generate an asset it already owned. Absence of evidence had
   been coded as evidence of absence. It now refuses instead, and says why.
+- A defect with a shape has siblings. Rather than call the outage closed, we
+  priced what a request actually costs and found both bugs again one call
+  deeper, in the embedding cache: reads that grew with the library, and a 403
+  from the exhausted cap being read as "no vector was ever made", which is the
+  condition for buying one. Vectors are content addressed, so they are
+  remembered now, and only a typed not-found counts as absence.
 
 ## What's next for Reprise
 
