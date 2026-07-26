@@ -98,7 +98,12 @@ def main() -> None:
 
 
 def check_test_count() -> None:
-    """The README quotes a test count; keep it honest against pytest itself."""
+    """Every doc that quotes a test count must match pytest itself.
+
+    The README was pinned; the submission docs were not, and they drifted to
+    three different numbers (68, 69, 78) while all reading as authoritative.
+    A number a reviewer can check has to be checked HERE, not remembered.
+    """
     import re
     import subprocess
 
@@ -123,7 +128,23 @@ def check_test_count() -> None:
         fail(f"could not read a collected-test count from pytest: {out[-200:]!r}")
     if collected != claimed:
         fail(f"README claims {claimed} tests, pytest collects {collected}")
-    print(f"test count consistent: {claimed}")
+
+    # Any other doc quoting "<N> tests" must quote the same N.
+    others = [
+        ROOT / "docs" / "submission" / "DEVPOST_STORY.md",
+        ROOT / "docs" / "submission" / "SUBMISSION.md",
+        ROOT / "docs" / "submission" / "JUDGING_PACKET.md",
+        ROOT / "docs" / "submission" / "TECHNICAL_BRIEF.html",
+    ]
+    for doc in others:
+        if not doc.exists():
+            continue
+        for found in re.findall(r"(\d+)[ -]tests?\b", doc.read_text()):
+            if int(found) != collected:
+                fail(
+                    f"{doc.name} claims {found} tests, pytest collects {collected}"
+                )
+    print(f"test count consistent across {1 + len(others)} docs: {claimed}")
 
 
 if __name__ == "__main__":

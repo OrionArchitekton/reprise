@@ -52,6 +52,9 @@
   .meta { color: var(--dim); font-size: 13px; font-family: var(--mono); margin-top: 10px;
           word-break: break-all; }
   .actions { margin-top: 14px; display: flex; gap: 10px; }
+  .compare { margin-top: 12px; font-family: var(--mono); font-size: 12.5px;
+             color: var(--dim); display: grid; gap: 3px; }
+  .compare .cmp-row { word-break: break-word; }
   .receipt { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
   .receipt summary { color: var(--dim); font-size: 13px; cursor: pointer; }
   .receipt dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 14px;
@@ -80,7 +83,7 @@
         <option value="image">image</option>
         <option value="audio">audio</option>
       </select>
-      <button class="primary" id="go" type="submit">Do I already own this?</button>
+      <button class="primary" id="go" type="submit">Did we already generate this?</button>
     </div>
     <div class="presets">
       <button type="button" data-fill="a red bicycle leaning against a white brick wall, product photo">try an exact repeat</button>
@@ -93,7 +96,7 @@
   {% if demo %}
     <div class="card reuse">
       <div class="verdict">reuse</div>
-      <div class="headline">You already own this. Saved $0.04.</div>
+      <div class="headline">Already in your library. Saved $0.04.</div>
       <div class="reason">exact prompt match against run 47a8978b (gemini-image/gemini-2.5-flash-image)</div>
       <div class="meta">sha256 b5f8a11ffe64d4f0... &middot; served from Backblaze B2, nothing generated</div>
     </div>
@@ -135,7 +138,7 @@ function card(d) {
 
   let head;
   if (d.verdict === "reuse") {
-    head = `You already own this. Saved $${d.saved_usd.toFixed(2)}.`;
+    head = `Already in your library. Saved $${d.saved_usd.toFixed(2)}.`;
   } else if (d.verdict === "review") {
     head = `Close match found (${(d.candidate.similarity * 100).toFixed(1)}% similar). Your call.`;
   } else {
@@ -153,6 +156,22 @@ function card(d) {
     media.src = d.serve_url;
     wrap.appendChild(media);
     root.appendChild(wrap);
+  }
+
+  // A review is a substitution decision, so show what is being substituted:
+  // the stored prompt beside the request, and the runners-up that were also
+  // considered. A similarity score alone is not enough to judge on.
+  if (d.verdict === "review" && d.candidate) {
+    const cmp = el("div", "compare");
+    cmp.appendChild(el("div", "cmp-row", `you asked for: ${d.prompt}`));
+    cmp.appendChild(el("div", "cmp-row", `stored asset: ${d.candidate.prompt}`));
+    if (d.alternatives && d.alternatives.length) {
+      cmp.appendChild(el("div", "cmp-row",
+        "also considered: " + d.alternatives
+          .map(a => `${a.prompt} (${(a.similarity * 100).toFixed(1)}%)`)
+          .join("; ")));
+    }
+    root.appendChild(cmp);
   }
 
   if (d.verdict === "review" && d.accept_token) {
@@ -187,6 +206,7 @@ function receipt(p) {
     ["sha256", p.sha256],
     ["produced by", `${p.provider} / ${p.model}`],
     ["original cost", `$${Number(p.cost_usd).toFixed(4)}`],
+    ["stored prompt", p.stored_prompt],
     ["ledger lock", p.object_lock.retain_days
       ? `${p.object_lock.mode}, ${p.object_lock.retain_days} days`
       : p.object_lock.mode],
@@ -195,6 +215,16 @@ function receipt(p) {
     if (!v) continue;
     dl.appendChild(el("dt", null, k));
     dl.appendChild(el("dd", null, String(v)));
+  }
+  if (p.manifest_url) {
+    dl.appendChild(el("dt", null, "open the manifest"));
+    const dd = el("dd");
+    const a = el("a", null, "fetch it and recompute the hash");
+    a.href = p.manifest_url;            // href only, never innerHTML
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    dd.appendChild(a);
+    dl.appendChild(dd);
   }
   box.appendChild(dl);
   return box;
@@ -230,7 +260,7 @@ async function submit(prompt, modality, force) {
     if (resp.ok) showCard(card(data));
     else showError(typeof data.detail === "string" ? data.detail : "request failed");
     refreshBoard();
-  } finally { go.disabled = false; go.textContent = "Do I already own this?"; }
+  } finally { go.disabled = false; go.textContent = "Did we already generate this?"; }
 }
 
 form.addEventListener("submit", (e) => {

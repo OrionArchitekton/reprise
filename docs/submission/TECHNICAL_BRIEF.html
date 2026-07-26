@@ -34,8 +34,8 @@ Backblaze Generative Media Hackathon 2026.</p>
 <p>Generative media teams pay twice for the same asset. The same product shot, the same
 jingle, weeks apart, requested by people who had no way to know it already existed. The
 bucket holding those assets is treated as an archive. Reprise treats it as the opposite:
-an asset that appreciates, placed in the request path so that owning something is checked
-before paying for it again.</p>
+an asset that appreciates, placed in the request path so that having generated
+something is checked before paying to generate it again.</p>
 
 <h2>Decision model</h2>
 <pre>prompt -> exact match?  ---- yes -> REUSE    serve from B2, $0, saving booked
@@ -127,7 +127,7 @@ itself.</p>
 </ul>
 
 <h2>Verification</h2>
-<p class="mono">78 tests, ruff, mypy strict, an eval-freshness pin, and a long-dash scan, all in CI.
+<p class="mono">88 tests, ruff, mypy strict, an eval-freshness pin, and a long-dash scan, all in CI.
 Live probe outputs, including two probe corrections kept deliberately, are in
 docs/run-evidence.md.</p>
 <p>Live: reprise-murex.vercel.app &nbsp;&middot;&nbsp; Source: github.com/OrionArchitekton/reprise<br>

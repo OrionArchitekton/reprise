@@ -18,7 +18,7 @@ Reprise
 **Elevator pitch** (Devpost caps this at 200 characters)
 
 ```
-Reprise checks whether you already own an asset before paying Genblaze to generate it again, serving it from Backblaze B2 and booking every decision to an Object Lock ledger.
+Reprise checks whether your Genblaze library already holds an asset before paying to generate it again, serves it from Backblaze B2, and books every decision to an Object Lock ledger.
 ```
 
 **Story**: paste each section of `DEVPOST_STORY.md` under the matching Devpost
@@ -72,8 +72,8 @@ https://github.com/backblaze-labs/genblaze/issues/205 (genblaze-google ships no 
 
 | Criterion | Evidence |
 |---|---|
-| Real-world utility | The cost of regenerating what you already own is the problem; the live demo books real savings against a real bucket. |
-| Production readiness | 69 tests, mypy strict, CI pinning published numbers to the eval data, reserve-before-spend budgets, capability-gated writes, correlation-id error handling. |
+| Real-world utility | The cost of regenerating what your own pipeline already made is the problem; the live demo books real savings against a real bucket. |
+| Production readiness | 88 tests, mypy strict, CI pinning published numbers to the eval data, reserve-before-spend budgets, capability-gated writes, correlation-id error handling. |
 | B2 storage and data orchestration | Content addressing, manifests, sidecars, Object Lock ledger, presigned serving with a prefix containment check. |
 | Use of Genblaze | Pipeline, ObjectStorageSink, manifest verification as an admission gate, a custom provider, and two upstream issues filed from real findings. |
 
@@ -85,3 +85,9 @@ https://github.com/backblaze-labs/genblaze/issues/205 (genblaze-google ships no 
 - [ ] The GitHub repo is public and the README setup steps work from a clean clone
 - [ ] `python tools/check_eval_freshness.py` exits 0 at the submitted SHA
 - [ ] No long dashes anywhere in the pasted text
+- [ ] `python tools/smoke.py https://reprise-murex.vercel.app` passes end to end
+      (it fails if the homepage is showing the degraded scoreboard, which is the
+      shape the 2026-07-26 transaction-cap outage took)
+- [ ] `GET /readyz` returns 200 (that probe reads storage; `/healthz` does not)
+- [ ] The Backblaze caps have headroom for the judging window (Caps and Alerts):
+      a judge hitting an exhausted cap sees a refusal, not a demo

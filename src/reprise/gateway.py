@@ -179,7 +179,7 @@ class Gateway:
         # were paid to create invisible to the very next request, which is the
         # one failure mode the reuse product cannot have.
         self.library.invalidate()
-        self._ledger.record(decision)
+        self._ledger.record(decision, produced=entry)
         url = self._serve_url(entry.storage_key)
         return GatewayResult(decision=decision, serve_url=url, new_entry=entry)
 
@@ -196,6 +196,21 @@ class Gateway:
         # the card the user sees cannot understate the ledger it just wrote.
         booked = replace(decision, saved_usd=decision.candidate.entry.cost_usd)
         return GatewayResult(decision=booked, serve_url=url)
+
+    def manifest_url(self, run_id: str) -> str:
+        """A short-lived link to the provenance manifest behind a result.
+
+        The bucket is private, so a receipt quoting a manifest key and its hash
+        asks the reader to take both on faith. This lets them fetch the
+        manifest and recompute the hash themselves. The run id is pinned into a
+        fixed key shape rather than accepted as a path, so it cannot be walked
+        into the ledger or the asset tree.
+        """
+        if "/" in run_id or ".." in run_id or not run_id:
+            raise ValueError(f"refusing to serve manifest for run id {run_id!r}")
+        return self._backend.get_url(
+            f"{self._prefix}/manifests/{run_id}.json", expires_in=self._ttl
+        )
 
     def _serve_url(self, storage_key: str) -> str:
         """Mint a short-lived URL, but only for keys inside our asset tree.

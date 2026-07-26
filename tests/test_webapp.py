@@ -66,7 +66,7 @@ def test_index_renders_scoreboard() -> None:
 
 def test_demo_mode_renders_static_card() -> None:
     client, *_ = build()
-    assert "You already own this" in client.get("/?demo=1").text
+    assert "Already in your library" in client.get("/?demo=1").text
 
 
 def test_decide_generate_then_reuse_roundtrip() -> None:
@@ -392,3 +392,28 @@ def test_the_page_still_loads_when_the_ledger_cannot_be_read() -> None:
 
     assert r.status_code == 200
     assert "Reprise" in r.text
+
+
+def test_readyz_fails_when_storage_cannot_be_read() -> None:
+    """Liveness is not readiness.
+
+    /healthz answers from process state, so it stayed 200 for the whole B2
+    transaction-cap outage while every page that touched storage was down. A
+    readiness probe has to actually read the store it depends on, and say so
+    when it cannot.
+    """
+    client, backend, *_ = build()
+    assert client.get("/readyz").status_code == 200
+
+    def refuse(key: str) -> bytes:
+        raise RuntimeError("Class B transaction cap exceeded")
+
+    backend.get = refuse  # type: ignore[method-assign]
+    backend.list = lambda *a, **k: (_ for _ in ()).throw(  # type: ignore[assignment]
+        RuntimeError("Class B transaction cap exceeded")
+    )
+
+    r = client.get("/readyz")
+
+    assert r.status_code == 503
+    assert r.json()["storage"] == "unreadable"

@@ -12,7 +12,7 @@ replays its own flow from the landing page.
 ### SHOT problem
 - target: dashboard
 - url: /
-- narration: Every team building with generative media pays for the same asset twice. The same product shot, the same jingle, weeks apart, requested by different people. Reprise sits in front of a Genblaze pipeline and asks one question first: do we already own this? Those numbers are not a mock. They come from an object locked ledger in Backblaze B2.
+- narration: Every team building with generative media pays for the same asset twice. The same product shot, the same jingle, weeks apart, requested by different people. Reprise sits in front of a Genblaze pipeline and asks one question first: did we already generate this? Those numbers come from an object locked ledger in B2, not from a counter.
 - action: goto url="/"
 - action: wait ms=700
 - action: highlight selector="#board"
@@ -48,12 +48,16 @@ replays its own flow from the landing page.
 
 ### SHOT generate
 - target: dashboard
-- narration: And something the library has never seen. Below 0.85 Reprise stops guessing and pays. This is a real Genblaze run through a provider we wrote ourselves, because every Imagen tier now refuses newly created API keys while still advertising itself as available. So the provider carries a fallback chain, and the manifest records the model that actually produced the bytes. It lands in B2 addressed by its own sha256, so the next person who asks gets it free.
+- narration: And what happens when the human says no. Same kind of near duplicate, but this time we reject it, and Reprise pays. It generates through a provider we wrote ourselves, because every Imagen tier now refuses newly created API keys while still advertising itself as available. So it carries a fallback chain, and the manifest records the model that actually produced the bytes. The asset lands in B2 addressed by its own sha256, so the next person who asks gets it free.
 - action: goto url="/"
 - action: wait ms=400
-- action: type selector="#prompt" text="a vintage typewriter on a wooden desk beside a stack of letters"
+- action: type selector="#prompt" text="a scarlet racing bicycle resting on a whitewashed brick wall, catalogue shot"
 - action: click selector="#go"
-- action: wait ms=24000
+- action: wait ms=9000
+- action: highlight selector=".actions"
+- action: wait ms=1200
+- action: click selector=".actions button:not(.primary)"
+- action: wait ms=26000
 - action: highlight selector="#result"
 
 ### SHOT ledger

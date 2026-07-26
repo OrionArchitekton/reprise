@@ -16,7 +16,7 @@ what is already in storage is the cost.
 ## What it does
 
 Reprise sits in front of a Genblaze pipeline and answers one question per
-request: do we already own this?
+request: did we already generate this?
 
 - **Exact match** returns the stored asset from Backblaze B2 behind a short
   lived presigned URL. Nothing is generated, and the money not re-spent is
@@ -56,7 +56,7 @@ those records, not from an application counter that anyone can edit.
   producing model, and the retention actually in force. Those are coordinates
   you can re-derive from the bucket yourself.
 - FastAPI and server rendered Jinja for the app, deployed on Vercel, secrets in
-  Doppler, 85 tests, mypy strict, and a CI check that pins the numbers in the
+  Doppler, 88 tests, mypy strict, and a CI check that pins the numbers in the
   README to the eval report that produced them.
 
 ## Challenges we ran into

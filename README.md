@@ -6,7 +6,7 @@ Every generative-media team quietly regenerates assets it already paid for:
 the same product shot, the same jingle, the same hero image with the same
 prompt, weeks apart, by different people. Reprise sits in front of your
 [Genblaze](https://github.com/backblaze-labs/genblaze) pipeline and answers
-one question per request: *do we already own this?* If yes, it serves the
+one question per request: *did we already generate this?* If yes, it serves the
 stored asset from Backblaze B2 and books the money you did not re-spend. If
 almost, a human decides. Only if no does it generate.
 
@@ -53,6 +53,27 @@ Honest caveat: the highest attribute-swap similarity measured 0.968, close
 under the 0.97 auto line. The review band exists precisely because prompt
 similarity cannot safely separate "same scene, different subject" on its own;
 swaps land in front of a human, never silently on a customer.
+
+## What it is worth at team scale
+
+One reuse in this demo saves $0.0387, which proves the mechanism and not much
+else. The arithmetic that matters is per team, and it is yours to run rather
+than ours to assert:
+
+| generations / day | monthly spend at $0.0387 | 10% duplicates | 30% duplicates |
+|---|---|---|---|
+| 50 | ~$58 | ~$6 | ~$17 |
+| 200 | ~$232 | ~$23 | ~$70 |
+| 1,000 | ~$1,161 | ~$116 | ~$348 |
+
+We deliberately do not publish a duplicate rate of our own. We have not measured
+one on real team traffic, and inventing one would be exactly the kind of number
+this project exists to refuse. The rate is an input you supply; what Reprise
+supplies is the mechanism that turns it into money not spent, plus the audit
+trail that proves each instance. Video and audio move the same arithmetic
+further, because their unit costs are higher and their regeneration latency is
+measured in minutes rather than seconds.
+
 
 ## How it uses B2 and Genblaze
 
@@ -108,7 +129,7 @@ export ELEVENLABS_API_KEY=...
 uvicorn "reprise.webapp:build_production_app" --factory --app-dir src --port 8000
 ```
 
-Then open http://localhost:8000. `pytest` runs the 85-test suite offline
+Then open http://localhost:8000. `pytest` runs the 88-test suite offline
 (a real Genblaze pipeline against an in-memory storage backend; only the
 provider network calls are mocked). CI checks that this number still matches
 what pytest collects, so it cannot quietly go stale. Live integration probes,

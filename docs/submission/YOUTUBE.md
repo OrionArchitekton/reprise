@@ -7,12 +7,12 @@ not sufficient for the judges' link check)
 
 ## Title
 
-Reprise: check what you already own before you pay to generate (Backblaze Generative Media Hackathon)
+Reprise: check what you already generated before you pay to generate it again (Backblaze Generative Media Hackathon)
 
 ## Description
 
 Reprise sits in front of a Genblaze pipeline and answers one question per
-request: do we already own this? Exact matches and near matches at or above
+request: did we already generate this? Exact matches and near matches at or above
 0.97 similarity are served straight from Backblaze B2 and the money not
 re-spent is booked as a saving. Between 0.85 and 0.97 a human decides. Below
 0.85 it generates for real and files the result, with its provenance manifest,

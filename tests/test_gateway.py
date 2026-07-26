@@ -10,6 +10,7 @@ hashing, manifest sealing and ingest are all the real SDK code paths.
 from __future__ import annotations
 
 import hashlib
+import json
 import struct
 import tempfile
 import zlib
@@ -189,3 +190,46 @@ def test_an_unreadable_library_never_becomes_a_reason_to_spend() -> None:
         gw.handle(Request(prompt="something entirely new", modality="image"))
 
     assert sum(1 for k in backend.objects if k.startswith("reprise/assets/")) == assets_before
+
+
+def test_a_generate_record_names_what_it_produced() -> None:
+    """An audit trail that says "we generated" without saying WHAT is thin.
+
+    The reuse records carry the asset they served; the generate records carried
+    only the prompt and the cost, so nothing tied the money spent to the object
+    it bought. The ledger now names the run, the digest and the key.
+    """
+    backend = MemoryBackend()
+    gw = make_gateway(backend, CountingEmbedder())
+
+    r = gw.handle(Request(prompt="a red bicycle against a white wall", modality="image"))
+
+    (rec,) = [
+        json.loads(backend.objects[k])
+        for k in backend.objects
+        if "/ledger/" in k and "/decision/" in k
+    ]
+    assert rec["verdict"] == "generate"
+    assert r.new_entry is not None
+    assert rec["produced"]["run_id"] == r.new_entry.run_id
+    assert rec["produced"]["sha256"] == r.new_entry.sha256
+    assert rec["produced"]["storage_key"] == r.new_entry.storage_key
+
+
+def test_the_manifest_behind_a_result_can_be_opened() -> None:
+    """Provenance a judge cannot open is provenance they have to take on faith.
+
+    The receipt quotes a manifest key and its canonical hash, but the bucket is
+    private, so nobody outside could fetch the manifest and recompute the hash.
+    A short-lived link makes the claim checkable by the person reading it.
+    """
+    backend = MemoryBackend()
+    gw = make_gateway(backend, CountingEmbedder())
+    r = gw.handle(Request(prompt="a red bicycle against a white wall", modality="image"))
+    assert r.new_entry is not None
+
+    url = gw.manifest_url(r.new_entry.run_id)
+
+    assert f"reprise/manifests/{r.new_entry.run_id}.json" in url
+    with pytest.raises(ValueError, match="refusing"):
+        gw.manifest_url("../ledger/secret")

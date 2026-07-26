@@ -36,7 +36,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, Field
@@ -99,7 +99,12 @@ def _entry_view(e: LibraryEntry, url: str | None = None) -> dict[str, Any]:
 
 
 def _proof_view(
-    e: LibraryEntry, *, prefix: str, retain_days: int | None, lock_mode: str
+    e: LibraryEntry,
+    *,
+    prefix: str,
+    retain_days: int | None,
+    lock_mode: str,
+    manifest_url: str | None = None,
 ) -> dict[str, Any]:
     """The receipt: every field is one a viewer can re-derive from the bucket.
 
@@ -111,6 +116,9 @@ def _proof_view(
     """
     return {
         "run_id": e.run_id,
+        # What the STORED asset was generated from. A substitution decision is
+        # between two prompts, and showing only the request hid half of it.
+        "stored_prompt": e.prompt,
         "manifest_key": f"{prefix}/manifests/{e.run_id}.json",
         "manifest_hash": e.manifest_hash,
         "asset_key": e.storage_key,
@@ -119,6 +127,9 @@ def _proof_view(
         "model": e.model,
         "cost_usd": e.cost_usd,
         "object_lock": {"mode": lock_mode, "retain_days": retain_days},
+        # Short-lived link to the manifest itself. The bucket is private, so
+        # without it the hash above is a number the reader has to trust.
+        "manifest_url": manifest_url,
     }
 
 
@@ -233,11 +244,17 @@ def create_app(
             result.decision.candidate.entry if result.decision.candidate else None
         )
         if served is not None:
+            try:
+                manifest_url = gateway.manifest_url(served.run_id)
+            except Exception as e:  # a broken link must not fail the answer
+                log.warning("manifest link unavailable: %s", e)
+                manifest_url = None
             view["proof"] = _proof_view(
                 served,
                 prefix=gateway.prefix,
                 retain_days=retain_days,
                 lock_mode=lock_mode,
+                manifest_url=manifest_url,
             )
         return view
 
@@ -284,7 +301,31 @@ def create_app(
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
+        """Liveness only: is this process answering? Touches nothing."""
         return {"status": "ok", "app": "reprise"}
+
+    @app.get("/readyz")
+    def readyz(response: Response) -> dict[str, str]:
+        """Readiness: can this process actually do its job?
+
+        /healthz stayed 200 through a total outage because it answers from
+        process state, so it could not see that every storage read was failing.
+        This probe does the cheapest real thing the app depends on: one listing
+        and one object read. It is what a monitor should watch and what a deploy
+        should gate on.
+        """
+        try:
+            ledger.spend_reservations_today(("reserve_generate",))
+            gateway.library.scan()
+            if gateway.library.last_scan_unreadable:
+                raise RuntimeError(
+                    f"{len(gateway.library.last_scan_unreadable)} manifest(s) unreadable"
+                )
+        except Exception as e:
+            log.warning("readiness check failed: %s", e)
+            response.status_code = 503
+            return {"status": "degraded", "storage": "unreadable", "app": "reprise"}
+        return {"status": "ok", "storage": "readable", "app": "reprise"}
 
     @app.get("/", response_class=HTMLResponse)
     def index(demo: int = 0) -> str:

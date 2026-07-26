@@ -34,7 +34,7 @@ from typing import Any
 from genblaze_core.storage.base import ObjectLockConfig, StorageBackend
 
 from reprise.embed import prompt_fingerprint
-from reprise.model import Decision, Verdict
+from reprise.model import Decision, LibraryEntry, Verdict
 
 LEDGER_SCHEMA = 1
 log = logging.getLogger("reprise.ledger")
@@ -115,8 +115,13 @@ class Ledger:
 
     # -- writes ------------------------------------------------------------
 
-    def record(self, decision: Decision) -> str:
-        """Write one decision; returns the ledger key."""
+    def record(self, decision: Decision, *, produced: LibraryEntry | None = None) -> str:
+        """Write one decision; returns the ledger key.
+
+        `produced` names what a GENERATE actually bought. Without it the record
+        said money was spent but not what it produced, so nothing tied the spend
+        to the object in the bucket.
+        """
         doc: dict[str, Any] = {
             "schema": LEDGER_SCHEMA,
             "kind": "decision",
@@ -140,6 +145,15 @@ class Ledger:
                 "similarity": decision.candidate.similarity,
                 "exact": decision.candidate.exact,
                 "cost_usd": e.cost_usd,
+            }
+        if produced is not None:
+            doc["produced"] = {
+                "run_id": produced.run_id,
+                "sha256": produced.sha256,
+                "storage_key": produced.storage_key,
+                "provider": produced.provider,
+                "model": produced.model,
+                "cost_usd": produced.cost_usd,
             }
         return self._write(doc, decision.request.prompt)
 
