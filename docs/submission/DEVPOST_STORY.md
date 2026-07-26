@@ -50,8 +50,13 @@ those records, not from an application counter that anyone can edit.
   matters of degree.
 - **Image generation** runs through a custom Genblaze `SyncProvider` we wrote
   for Gemini native image models, plus the stock ElevenLabs provider for audio.
+- **Provenance is checkable, not asserted.** Admission is gated on
+  `Manifest.verify_hash()`, and every result carries a proof receipt: run id,
+  manifest key and canonical hash, content addressed asset key, sha256,
+  producing model, and the retention actually in force. Those are coordinates
+  you can re-derive from the bucket yourself.
 - FastAPI and server rendered Jinja for the app, deployed on Vercel, secrets in
-  Doppler, 68 tests, mypy strict, and a CI check that pins the numbers in the
+  Doppler, 85 tests, mypy strict, and a CI check that pins the numbers in the
   README to the eval report that produced them.
 
 ## Challenges we ran into
@@ -127,8 +132,9 @@ while retention holds.
 
 ## What's next for Reprise
 
-- Index the library instead of re-listing the bucket per request. Genblaze's
-  `ParquetSink` tables are the natural seed.
+- Finish the index. Ledger reads are already bounded (day partitions plus a
+  snapshot of completed days), but a cold instance still scans the library once;
+  Genblaze's `ParquetSink` tables are the natural seed for persisting it.
 - Add an image embedding signal alongside the prompt signal, so the review band
   can narrow honestly rather than by moving a number.
 - Team scoped libraries with per project budgets, and a webhook so an existing
