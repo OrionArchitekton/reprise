@@ -192,3 +192,40 @@ verify_hash() -> True
 
 "v0.6.0" in Devpost updates is the release WAVE name / git tag; the umbrella
 package is 0.4.4 (CHANGELOG states this verbatim). We are current.
+
+## 2026-07-26 21:55 UTC - demo prompt bands, measured without touching B2
+
+The bucket's Class B cap was still exhausted, so the library could not be
+projected. The verdict does not need it: a near-match score is the cosine
+between the request embedding and the STORED PROMPT's embedding, the stored
+image prompt is on record (`tools/live_generate.py:34`), and Gemini is a
+separate service with a separate quota. Probe ran the production
+`score_candidates` + `classify` over a one-entry library rather than
+re-deriving the thresholds, so an app-side threshold change cannot leave the
+numbers below asserting bands that no longer exist.
+
+Stored prompt: `a red bicycle leaning against a white brick wall, product
+photo` (gemini-embedding-001, 3072 dims).
+
+```
+exact repeat (UI preset)     -> reuse    sim=1.0000
+near-dupe (UI preset)        -> review   sim=0.9348
+reject shot (demo video)     -> review   sim=0.8710
+something new (UI preset)    -> generate sim=n/a
+```
+
+Two things this settles:
+
+- The demo video's generate shot works. It types the reject-shot prompt,
+  expects a REVIEW card, and clicks "generate fresh instead". That prompt
+  scores 0.8710, inside [0.85, 0.97).
+- The narration's "ninety three percent similar" for the near-duplicate is
+  accurate at 0.9348.
+
+Uncertainty runs the safe way. A one-entry library is a LOWER bound on the real
+score, because the real verdict takes the max over every substitutable entry:
+adding entries can only raise it. So the reject shot cannot fall through to
+GENERATE; the only way it changes is another entry scoring 0.97 or above, which
+would need a stored prompt closer to a scarlet racing bicycle than the red
+bicycle already in the library. Confirm against the live library before
+rendering anyway, since that is one cheap call once reads recover.
