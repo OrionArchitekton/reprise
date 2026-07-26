@@ -1,0 +1,16 @@
+# environments / caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# local artifacts and demo output
+demo/out/
+data/
+*.log
+
+# never commit credentials; all secrets live in doppler (genblaze-hackathon/prd)
+.env
+.env.*
