@@ -194,7 +194,9 @@ def test_accept_token_is_bound_to_its_prompt() -> None:
 def test_expired_accept_token_is_refused() -> None:
     from reprise.webapp import mint_accept_token, verify_accept_token
 
-    token = mint_accept_token("a1", PROMPT, expires_at=1000, secret=SECRET)
+    token = mint_accept_token(
+        "a1", PROMPT, expires_at=1000, secret=SECRET, review_id="r1"
+    )
     assert verify_accept_token(token, "a1", PROMPT, secret=SECRET, now=999)
     assert not verify_accept_token(token, "a1", PROMPT, secret=SECRET, now=1001)
 
@@ -266,3 +268,47 @@ def test_serving_outside_the_asset_prefix_is_refused() -> None:
     _, _, _, gw = build()
     with pytest.raises(ValueError, match="refusing to serve"):
         gw._serve_url("reprise/ledger/some-record.json")
+
+
+def test_exact_repeat_does_not_consume_decision_budget() -> None:
+    """The free path must not be billed.
+
+    An exact repeat is answered without any embedding call, so reserving the
+    embed budget before knowing the verdict charged a paid quota for work that
+    never happened, and let a burst of free lookups exhaust the cap that exists
+    to bound paid ones.
+    """
+    client, _, ledger, _ = build()
+    client.post("/api/decide", json={"prompt": PROMPT})  # seeds the library
+    before = ledger.spend_reservations_today(("reserve_embed",))
+
+    repeat = client.post("/api/decide", json={"prompt": PROMPT}).json()
+
+    assert repeat["verdict"] == "reuse"
+    assert ledger.spend_reservations_today(("reserve_embed",)) == before
+
+
+def test_an_accept_token_cannot_be_replayed_to_inflate_savings() -> None:
+    """One offer, one saving.
+
+    The token proved the server offered this candidate, but nothing stopped the
+    same token being posted repeatedly, each time writing another accept record
+    into an object-locked ledger. Savings are the product's headline number and
+    the ledger cannot be edited afterwards, so a replay is permanent inflation.
+    """
+    client, _, ledger, _ = build()
+    client.post("/api/decide", json={"prompt": PROMPT})
+    review = client.post("/api/decide", json={"prompt": NEAR}).json()
+    body = {
+        "prompt": NEAR,
+        "modality": "image",
+        "asset_id": review["candidate"]["asset_id"],
+        "token": review["accept_token"],
+    }
+
+    assert client.post("/api/accept", json=body).status_code == 200
+    replay = client.post("/api/accept", json=body)
+
+    assert replay.status_code == 409
+    assert ledger.summarize().accepts == 1
+    assert ledger.summarize().saved_usd == 0.05

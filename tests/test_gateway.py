@@ -132,7 +132,12 @@ def test_near_dupe_goes_to_review_not_generation() -> None:
 
     assert r.decision.verdict is Verdict.REVIEW
     assert sum(1 for k in backend.objects if k.startswith("reprise/assets/")) == assets_before
-    assert r.serve_url is None
+    # The candidate MUST be served: a review asks a human to judge whether this
+    # asset substitutes for what they asked for, and that judgement is not
+    # possible from a prompt string and a similarity score alone. Serving costs
+    # nothing (the bytes are already paid for) and no saving is booked until the
+    # human accepts.
+    assert r.serve_url is not None
 
 
 def test_accept_review_books_the_saving() -> None:

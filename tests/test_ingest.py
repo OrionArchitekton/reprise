@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from genblaze_core import parse_manifest
+
 from reprise.ingest import entries_from_manifest
 
 BUCKET_URL = "https://s3.us-west-004.backblazeb2.com/reprise-vault-9315d5"
@@ -90,7 +92,25 @@ def manifest_dict(**over: Any) -> dict[str, Any]:
         },
     }
     base.update(over)
+    if "canonical_hash" not in over:
+        # Compute the hash AFTER overrides, so every fixture is a manifest that
+        # actually verifies. A hardcoded hash made these fixtures permanently
+        # tampered, which is precisely the state ingest must refuse.
+        base["canonical_hash"] = parse_manifest(base).compute_hash()
     return base
+
+
+def rehash(doc: dict[str, Any]) -> dict[str, Any]:
+    """Re-seal a mutated fixture.
+
+    A test that edits provenance-relevant fields is modelling a DIFFERENT valid
+    manifest, not a tampered one, so it must re-seal. Without this, the hash
+    gate would refuse it and the test would pass for the wrong reason: never
+    exercising the per-asset rule it claims to be about. The tamper test
+    deliberately does NOT call this.
+    """
+    doc["canonical_hash"] = parse_manifest(doc).compute_hash()
+    return doc
 
 
 def test_completed_step_yields_one_entry() -> None:
@@ -120,7 +140,7 @@ def test_failed_step_yields_nothing() -> None:
     m["run"]["steps"][0]["status"] = "failed"
     m["run"]["steps"][0]["error"] = "provider exploded"
 
-    assert entries_from_manifest(m) == []
+    assert entries_from_manifest(rehash(m)) == []
 
 
 def test_asset_without_sha256_is_not_reusable() -> None:
@@ -128,7 +148,7 @@ def test_asset_without_sha256_is_not_reusable() -> None:
     m = manifest_dict()
     m["run"]["steps"][0]["assets"][0]["sha256"] = None
 
-    assert entries_from_manifest(m) == []
+    assert entries_from_manifest(rehash(m)) == []
 
 
 def test_missing_constraint_metadata_derives_ratio_from_dimensions() -> None:
@@ -143,7 +163,7 @@ def test_missing_constraint_metadata_derives_ratio_from_dimensions() -> None:
     m["run"]["steps"][0]["assets"][0]["width"] = 1920
     m["run"]["steps"][0]["assets"][0]["height"] = 1080
 
-    (e,) = entries_from_manifest(m)
+    (e,) = entries_from_manifest(rehash(m))
 
     assert e.aspect_ratio == "16:9"
     assert e.style is None
@@ -154,7 +174,7 @@ def test_step_without_prompt_yields_nothing() -> None:
     m = manifest_dict()
     m["run"]["steps"][0]["prompt"] = None
 
-    assert entries_from_manifest(m) == []
+    assert entries_from_manifest(rehash(m)) == []
 
 
 def test_multi_asset_step_yields_one_entry_per_asset() -> None:
@@ -166,7 +186,27 @@ def test_multi_asset_step_yields_one_entry_per_asset() -> None:
     a2["url"] = f"{BUCKET_URL}/reprise/assets/cc/cc/{sha2}.png"
     m["run"]["steps"][0]["assets"].append(a2)
 
-    entries = entries_from_manifest(m)
+    entries = entries_from_manifest(rehash(m))
 
     assert [e.asset_id for e in entries] == ["mock-red", "mock-red-2"]
     assert entries[1].storage_key == f"reprise/assets/cc/cc/{sha2}.png"
+
+
+def test_manifest_edited_after_hashing_is_refused_entirely() -> None:
+    """A manifest whose payload no longer matches its hash admits nothing.
+
+    This is the trust boundary of the whole product: reuse is only safe if the
+    manifest describing an asset is the one Genblaze wrote. Editing the prompt
+    of a stored run would otherwise let an attacker point a popular prompt at
+    bytes of their choosing, and Reprise would serve them as "already owned".
+    """
+    doc = manifest_dict()
+    doc["run"]["steps"][0]["prompt"] = "a competitor logo, product photo"
+
+    assert entries_from_manifest(doc) == []
+
+
+def test_a_manifest_that_verifies_still_ingests() -> None:
+    """Control for the gate above: the fixture itself must pass verification."""
+    assert parse_manifest(manifest_dict()).verify_hash()
+    assert len(entries_from_manifest(manifest_dict())) == 1

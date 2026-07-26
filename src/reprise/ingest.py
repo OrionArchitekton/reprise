@@ -4,6 +4,18 @@ The asset library is not a second source of truth. Genblaze's ObjectStorageSink
 already writes a canonical manifest next to every asset it stores in B2; the
 library is a projection of those manifests, and this module is the projection.
 
+Admission is gated on `Manifest.verify_hash()`: a manifest whose payload no
+longer matches its canonical hash is refused ENTIRELY, assets and all. That is
+the trust boundary of the product. Reuse is only safe if the manifest
+describing an asset is the one Genblaze wrote; without this gate, editing the
+prompt on a stored run would point a popular prompt at bytes of the editor's
+choosing and Reprise would serve them as "already owned".
+
+The hash is the hard gate; the rules below stay per-asset filters. Using the
+stricter `verify()` for admission would let one URL-only asset disqualify a
+run's other, properly bound assets, which throws away reusable work for no
+gain in safety.
+
 Reusability rules mirror `Manifest.verify()` semantics deliberately:
 
 * only SUCCEEDED steps count (the SDK's StepStatus vocabulary; runs say
@@ -31,6 +43,8 @@ from reprise.model import LibraryEntry
 def entries_from_manifest(data: dict[str, Any] | Manifest) -> list[LibraryEntry]:
     """Project one manifest into zero or more reusable library entries."""
     manifest = data if isinstance(data, Manifest) else parse_manifest(data)
+    if not manifest.verify_hash():
+        return []
     run = manifest.run
 
     entries: list[LibraryEntry] = []

@@ -20,7 +20,7 @@ from genblaze_core.storage.types import FileEntry, ListPage
 
 from reprise.embed import HashEmbedder, prompt_fingerprint
 from reprise.library import B2Library
-from tests.test_ingest import manifest_dict
+from tests.test_ingest import manifest_dict, rehash
 
 
 class MemoryBackend(StorageBackend):
@@ -155,7 +155,7 @@ def test_identical_prompts_share_one_sidecar() -> None:
     sha2 = "d" * 64
     m2["run"]["steps"][0]["assets"][0]["asset_id"] = "asset-2"
     m2["run"]["steps"][0]["assets"][0]["sha256"] = sha2
-    backend.put("reprise/manifests/run-2.json", json.dumps(m2).encode())
+    backend.put("reprise/manifests/run-2.json", json.dumps(rehash(m2)).encode())
     lib = B2Library(backend, prefix="reprise")
 
     entries = lib.ensure_embeddings(lib.scan(), HashEmbedder(dims=16))

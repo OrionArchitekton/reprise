@@ -27,7 +27,7 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from genblaze_core.storage.base import ObjectLockConfig, StorageBackend
@@ -60,11 +60,13 @@ class Ledger:
         *,
         prefix: str = "reprise",
         lock: ObjectLockConfig | None = None,
+        retain_days: int | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._backend = backend
         self._prefix = prefix.rstrip("/")
         self._lock = lock
+        self._retain_days = retain_days
         self._clock = clock or (lambda: datetime.now(UTC))
         self._seq = 0
 
@@ -98,7 +100,7 @@ class Ledger:
             }
         return self._write(doc, decision.request.prompt)
 
-    def record_accept(self, decision: Decision) -> str:
+    def record_accept(self, decision: Decision, *, review_id: str = "") -> str:
         """A human accepted a REVIEW: the saving becomes real, as a NEW record.
 
         The original decision object stays untouched (it may be object-locked);
@@ -111,6 +113,9 @@ class Ledger:
             "kind": "accept",
             "ts": self._clock().isoformat(),
             "prompt": decision.request.prompt,
+            # Names the offer this acceptance answers, so the ledger itself is
+            # the record of which offers are already spent.
+            "review_id": review_id,
             "saved_usd": decision.candidate.entry.cost_usd,
             "candidate": {
                 "asset_id": decision.candidate.entry.asset_id,
@@ -133,15 +138,31 @@ class Ledger:
             f"{prompt_fingerprint(prompt)[:8]}-{nonce}.json"
         )
         data = json.dumps(doc, sort_keys=True).encode()
-        if self._lock is not None:
+        lock = self._lock_for_write()
+        if lock is not None:
             # genblaze-s3 extends put() with a first-class object_lock kwarg;
             # portable backends without it simply are not lockable ledgers.
             self._backend.put(  # type: ignore[call-arg]
-                key, data, content_type="application/json", object_lock=self._lock
+                key, data, content_type="application/json", object_lock=lock
             )
         else:
             self._backend.put(key, data, content_type="application/json")
         return key
+
+    def _lock_for_write(self) -> ObjectLockConfig | None:
+        """Build the retention horizon for THIS write.
+
+        A config built once at construction ages with the process: a warm
+        serverless instance keeps writing records whose retain_until was
+        measured from boot, and past the window it writes no real protection at
+        all while the UI still advertises an object-locked ledger. Measuring
+        from each write makes the horizon a property of the record.
+        """
+        if self._retain_days is not None:
+            return ObjectLockConfig(
+                retain_until=self._clock() + timedelta(days=self._retain_days)
+            )
+        return self._lock
 
     def reserve_spend(self, request_prompt: str, kind: str) -> str:
         """Book an intent to spend BEFORE the money leaves.
@@ -192,6 +213,21 @@ class Ledger:
             if doc.get("kind") in kinds
             and str(doc.get("ts", "")).startswith(today)
         )
+
+    def accepted_review_ids(self) -> set[str]:
+        """Which review offers have already been spent.
+
+        The ledger is the store: an acceptance is only real once its record is
+        written, so asking the ledger is asking the same source the scoreboard
+        is computed from, with no second database to fall out of sync. This is
+        still read-then-act, so two simultaneous accepts of one offer can both
+        pass; the check bounds replay, it does not serialize it.
+        """
+        return {
+            str(doc.get("review_id"))
+            for doc in self.entries()
+            if doc.get("kind") == "accept" and doc.get("review_id")
+        }
 
     def summarize(self) -> Scoreboard:
         reuses = reviews = generates = accepts = 0

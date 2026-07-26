@@ -136,3 +136,25 @@ def test_retain_until_must_cover_judging() -> None:
     """Pin the retention default the app will ship with: past judging end."""
     lock = ObjectLockConfig(retain_until=datetime(2026, 8, 15, tzinfo=UTC))
     assert lock.retain_until - datetime(2026, 8, 11, 21, 0, tzinfo=UTC) > timedelta(0)
+
+
+def test_retention_horizon_is_computed_at_every_write() -> None:
+    """A lock built once at boot shrinks: a warm instance writes stale horizons.
+
+    With retain_days the horizon must be measured from EACH write, so a process
+    that has been up for days still writes records protected for the full
+    window (and never writes an already-expired retain_until).
+    """
+    now = datetime(2026, 7, 26, 12, 0, 0, tzinfo=UTC)
+    current = [now]
+    b = LockRecordingBackend()
+    led = Ledger(b, prefix="reprise", retain_days=30, clock=lambda: current[0])
+
+    first = led.record(reuse_decision())
+    current[0] = now + timedelta(days=10)  # the instance stayed warm for 10 days
+    later = led.record(reuse_decision())
+
+    lock_first, lock_later = b.locks[first], b.locks[later]
+    assert lock_first is not None and lock_later is not None
+    assert lock_first.retain_until == now + timedelta(days=30)
+    assert lock_later.retain_until == now + timedelta(days=40)

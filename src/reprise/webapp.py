@@ -33,7 +33,6 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -137,24 +136,39 @@ def _accept_secret() -> bytes:
 
 
 def mint_accept_token(
-    asset_id: str, prompt: str, *, expires_at: int, secret: bytes
+    asset_id: str, prompt: str, *, expires_at: int, secret: bytes, review_id: str
 ) -> str:
-    """Capability token: this server offered THIS asset for THIS prompt."""
-    payload = f"{asset_id}|{prompt_fingerprint(prompt)}|{expires_at}".encode()
+    """Capability token: this server offered THIS asset for THIS prompt, once.
+
+    `review_id` names the individual offer. It rides in the clear (the MAC
+    covers it) so acceptance can be checked against the ledger for that exact
+    offer, which is what makes a replayed token a detectable duplicate rather
+    than a second saving.
+    """
+    payload = f"{asset_id}|{prompt_fingerprint(prompt)}|{expires_at}|{review_id}".encode()
     mac = hmac.new(secret, payload, hashlib.sha256).hexdigest()[:32]
-    return f"{expires_at}.{mac}"
+    return f"{expires_at}.{review_id}.{mac}"
+
+
+def review_id_from_token(token: str) -> str:
+    """The offer id carried by a token. Empty when the token is malformed."""
+    parts = token.split(".")
+    return parts[1] if len(parts) == 3 else ""
 
 
 def verify_accept_token(
     token: str, asset_id: str, prompt: str, *, secret: bytes, now: int
 ) -> bool:
-    exp_str, _, mac = token.partition(".")
+    parts = token.split(".")
+    if len(parts) != 3:
+        return False
+    exp_str, review_id, mac = parts
     if not mac or not exp_str.isdigit():
         return False
     if int(exp_str) < now:
         return False
     expected = mint_accept_token(
-        asset_id, prompt, expires_at=int(exp_str), secret=secret
+        asset_id, prompt, expires_at=int(exp_str), secret=secret, review_id=review_id
     )
     # Constant-time: token comparison must not leak via timing.
     return hmac.compare_digest(token, expected)
@@ -245,11 +259,18 @@ def create_app(
             aspect_ratio=body.aspect_ratio,
             style=body.style,
         )
-        # Any decide may embed caller-chosen text, which costs money whether or
-        # not anything is generated. Reserve that budget first.
-        budget("reserve_embed", daily_decision_cap)
+        # A decide that has to embed caller-chosen text costs money whether or
+        # not anything is generated, so the budget is reserved at the moment the
+        # gateway is about to make that call and not before: an exact repeat is
+        # answered for free and must not consume a paid quota. The HTTPException
+        # a refusal raises propagates out of the hook, so the embedding never
+        # happens.
         try:
-            decision = gateway.preview(request)
+            decision = gateway.preview(
+                request, before_embed=lambda: budget("reserve_embed", daily_decision_cap)
+            )
+        except HTTPException:
+            raise
         except Exception as e:
             raise fail(e) from e
 
@@ -272,6 +293,7 @@ def create_app(
                 body.prompt,
                 expires_at=clock() + ACCEPT_TOKEN_TTL_SEC,
                 secret=secret(),
+                review_id=uuid.uuid4().hex[:16],
             )
         cache.pop("scoreboard", None)
         return JSONResponse(view)
@@ -304,6 +326,16 @@ def create_app(
                 status_code=403,
                 detail="invalid or expired accept token; re-run the check first",
             )
+        review_id = review_id_from_token(body.token)
+        try:
+            already = ledger.accepted_review_ids()
+        except Exception as e:  # cannot prove this offer is unspent: refuse
+            raise fail(e) from e
+        if review_id in already:
+            raise HTTPException(
+                status_code=409,
+                detail="this review was already accepted; re-run the check to decide again",
+            )
         try:
             entries = gateway.library.scan()
         except Exception as e:
@@ -318,7 +350,7 @@ def create_app(
             reason="human accepted review candidate",
         )
         try:
-            result = gateway.accept_review(decision)
+            result = gateway.accept_review(decision, review_id=review_id)
         except Exception as e:
             raise fail(e) from e
         cache.pop("scoreboard", None)
@@ -334,7 +366,6 @@ def create_app(
 
 def build_production_app() -> FastAPI:
     """The deployment entrypoint: real B2, Gemini, ElevenLabs from env."""
-    from genblaze_core.storage.base import ObjectLockConfig
     from genblaze_elevenlabs import ElevenLabsTTSProvider
     from genblaze_s3 import S3StorageBackend
 
@@ -343,11 +374,11 @@ def build_production_app() -> FastAPI:
 
     backend = S3StorageBackend.for_backblaze()
     retain_days = int(os.environ.get("REPRISE_LEDGER_RETAIN_DAYS", "30"))
-    # Computed at write time, never a hardcoded calendar date: a fixed date
-    # silently degrades to "no effective retention" once it passes, while the
-    # UI keeps advertising an object-locked ledger.
-    lock = ObjectLockConfig(retain_until=datetime.now(UTC) + timedelta(days=retain_days))
-    ledger = Ledger(backend, prefix="reprise", lock=lock)
+    # Pass the WINDOW, not a computed horizon: the Ledger measures retention
+    # from each write. A horizon computed here would be fixed at process boot
+    # and would age with a warm serverless instance, eventually writing no real
+    # protection while the UI still advertised an object-locked ledger.
+    ledger = Ledger(backend, prefix="reprise", retain_days=retain_days)
     gateway = Gateway(
         backend,
         GeminiEmbedder(),

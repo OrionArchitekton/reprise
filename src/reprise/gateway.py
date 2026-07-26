@@ -79,19 +79,35 @@ class Gateway:
 
     # -- the one entry point ----------------------------------------------
 
-    def preview(self, request: Request) -> Decision:
+    def preview(
+        self, request: Request, *, before_embed: Callable[[], None] | None = None
+    ) -> Decision:
         """The verdict alone: no generation, no ledger write, no side effects.
 
         Lets callers gate spend (rate caps, budget checks) BEFORE committing:
         a REUSE/REVIEW preview is always safe to act on, a GENERATE preview
         tells the caller that proceeding will cost money.
-        """
-        return self._decide(request, self.library.scan())
 
-    def _decide(self, request: Request, entries: list[LibraryEntry]) -> Decision:
+        `before_embed` runs immediately before the first billable embedding
+        call and never at all when the exact-match path answers the request.
+        A caller reserving budget outside this method would have to reserve
+        unconditionally, charging a paid quota for a free lookup; raising from
+        the hook (a cap refusal) stops the embedding from happening.
+        """
+        return self._decide(request, self.library.scan(), before_embed=before_embed)
+
+    def _decide(
+        self,
+        request: Request,
+        entries: list[LibraryEntry],
+        *,
+        before_embed: Callable[[], None] | None = None,
+    ) -> Decision:
         # Free path first: exact match needs no embedding call.
         decision = decide(request, entries)
         if decision.verdict is not Verdict.REUSE:
+            if before_embed is not None:
+                before_embed()
             embedded = self.library.ensure_embeddings(entries, self._embedder)
             request_vec = self._embedder.embed(request.prompt)
             candidates = score_candidates(request, request_vec, embedded)
@@ -116,8 +132,14 @@ class Gateway:
             return GatewayResult(decision=decision, serve_url=url)
 
         if decision.verdict is Verdict.REVIEW:
+            assert decision.candidate is not None
             self._ledger.record(decision)
-            return GatewayResult(decision=decision)
+            # Serve the candidate. A review asks a human whether this asset
+            # substitutes for what they asked for, which cannot be judged from
+            # a prompt and a similarity score. The bytes are already paid for,
+            # and nothing is booked as saved until acceptance.
+            url = self._serve_url(decision.candidate.entry.storage_key)
+            return GatewayResult(decision=decision, serve_url=url)
 
         # GENERATE: run the pipeline FIRST, record after -- a failed generation
         # must surface as an error (Genblaze itself seals a failure manifest),
@@ -127,12 +149,14 @@ class Gateway:
         url = self._serve_url(entry.storage_key)
         return GatewayResult(decision=decision, serve_url=url, new_entry=entry)
 
-    def accept_review(self, decision: Decision) -> GatewayResult:
+    def accept_review(
+        self, decision: Decision, *, review_id: str = ""
+    ) -> GatewayResult:
         """A human accepted a REVIEW candidate: serve it and book the saving."""
         if decision.verdict is not Verdict.REVIEW or decision.candidate is None:
             raise ValueError("accept_review requires a REVIEW decision with a candidate")
         url = self._serve_url(decision.candidate.entry.storage_key)
-        self._ledger.record_accept(decision)
+        self._ledger.record_accept(decision, review_id=review_id)
         # A REVIEW decision carries saved_usd 0.0 by construction: the money
         # only becomes real at acceptance. Report what record_accept booked, so
         # the card the user sees cannot understate the ledger it just wrote.
