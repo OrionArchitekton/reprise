@@ -2,6 +2,50 @@
 
 All timestamps PT. Every claim below is a pasted probe result, not a paraphrase.
 
+## 2026-07-26 ~19:40 - SDK feedback filed, and a correction to what the
+## preflight probe actually proved
+
+Re-probed the imagen question with free calls only (ListModels, models.get, and
+:predict bodies that 404 or 400 before any generation), to state it precisely
+enough to file upstream:
+
+```
+ListModels: 200, 56 models advertised
+  imagen-* (3): imagen-4.0-generate-001, imagen-4.0-ultra-generate-001, imagen-4.0-fast-generate-001
+  gemini-*image* (6): gemini-2.5-flash-image, gemini-3-pro-image-preview, gemini-3-pro-image,
+                      gemini-3.1-flash-image-preview, gemini-3.1-flash-image, gemini-3.1-flash-lite-image
+
+models.get imagen-3.0-fast-generate-001: 404  Model is not found: ... for api version v1beta
+models.get imagen-3.0-generate-002:      404  Model is not found: ... for api version v1beta
+models.get imagen-4.0-generate-001:      200  LIVE                      <- the genblaze family probe's signal
+:predict   imagen-4.0-generate-001:      404  This model models/imagen-4.0-generate-001 is no longer
+                                              available to new users. Please update your code to use
+                                              a newer model for the latest features and improvements.
+:predict   imagen-4.0-ultra-generate-001: 404 (same)
+:predict   imagen-4.0-fast-generate-001:  404 (same)
+
+entitlement is checked before params (both bodies deliberately invalid, zero cost):
+  POST imagen-4.0-generate-001:predict        {}  -> 404 no longer available to new users
+  POST gemini-2.5-flash-image:generateContent {}  -> 400 contents is not specified
+```
+
+CORRECTION to the 10:05 entry below. That entry credited the SDK preflight with
+killing the Imagen step before spend. True, but only for `imagen-3.0-*`, which
+left the catalog outright, so `models.get` 404s and the probe returns DEAD. For
+the `imagen-4.0-*` line the probe reads 200 and returns LIVE, preflight PASSES,
+and the 404 lands at call time. The probe measures catalog MEMBERSHIP; what
+preflight needs is ENTITLEMENT. Our own product lesson restated: a listing is
+not an entitlement.
+
+Filed upstream (feedback prize track):
+- https://github.com/backblaze-labs/genblaze/issues/206 - probe returns LIVE for
+  slugs :predict rejects; proposed error mapping, an entitlement probe, and a
+  third LiveProbeResult state. Includes the honest caveat that we have no
+  Imagen-entitled key to confirm the 400 control on that endpoint.
+- https://github.com/backblaze-labs/genblaze/issues/205 - no provider for the six
+  Gemini-native image models a new key CAN call; wire-shape table and the
+  `SyncProvider` patch sketch from `src/reprise/gemini_image.py`.
+
 ## 2026-07-26 ~10:25 - Phase 3 deploy verified (public URL live)
 
 Vercel team project (dan-mercedes-projects/reprise), Python runtime, env from
