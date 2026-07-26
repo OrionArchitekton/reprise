@@ -63,6 +63,9 @@ class DecideBody(BaseModel):
     modality: str = Field(default="image", pattern="^(image|audio)$")
     aspect_ratio: str | None = Field(default=None, max_length=32)
     style: str | None = Field(default=None, max_length=64)
+    # The human rejected what the library offered and wants a fresh asset. It
+    # skips the library entirely: no scan, no embedding, straight to spending.
+    force: bool = False
 
 
 class AcceptBody(BaseModel):
@@ -90,6 +93,30 @@ def _entry_view(e: LibraryEntry, url: str | None = None) -> dict[str, Any]:
         "cost_usd": e.cost_usd,
         "run_id": e.run_id,
         "serve_url": url,
+    }
+
+
+def _proof_view(
+    e: LibraryEntry, *, prefix: str, retain_days: int | None, lock_mode: str
+) -> dict[str, Any]:
+    """The receipt: every field is one a viewer can re-derive from the bucket.
+
+    A boolean "verified: true" would be the server vouching for itself. These
+    are the actual coordinates instead: fetch the manifest at `manifest_key`,
+    recompute its canonical hash, and compare with `manifest_hash`; fetch the
+    object at `asset_key` and compare its digest with `sha256`. Entries only
+    exist here because ingest refused every manifest whose hash did not match.
+    """
+    return {
+        "run_id": e.run_id,
+        "manifest_key": f"{prefix}/manifests/{e.run_id}.json",
+        "manifest_hash": e.manifest_hash,
+        "asset_key": e.storage_key,
+        "sha256": e.sha256,
+        "provider": e.provider,
+        "model": e.model,
+        "cost_usd": e.cost_usd,
+        "object_lock": {"mode": lock_mode, "retain_days": retain_days},
     }
 
 
@@ -196,6 +223,21 @@ def create_app(
         return secret_holder["k"]
 
     cache: dict[str, tuple[float, Any]] = {}
+    lock_mode, retain_days = ledger.retention
+
+    def with_proof(view: dict[str, Any], result: GatewayResult) -> dict[str, Any]:
+        """Attach the receipt for whichever entry this result actually served."""
+        served = result.new_entry or (
+            result.decision.candidate.entry if result.decision.candidate else None
+        )
+        if served is not None:
+            view["proof"] = _proof_view(
+                served,
+                prefix=gateway.prefix,
+                retain_days=retain_days,
+                lock_mode=lock_mode,
+            )
+        return view
 
     def cached(key: str, produce: Callable[[], Any]) -> Any:
         hit = cache.get(key)
@@ -259,6 +301,25 @@ def create_app(
             aspect_ratio=body.aspect_ratio,
             style=body.style,
         )
+        if body.force:
+            # The human already saw what the library had and rejected it. There
+            # is nothing left to decide, so this path pays for generation and
+            # skips both the scan and the embedding it would have cost.
+            budget("reserve_generate", daily_generation_cap)
+            forced = Decision(
+                verdict=Verdict.GENERATE,
+                request=request,
+                reason="human rejected the library candidate and asked for a fresh asset",
+            )
+            try:
+                result = gateway.handle(request, decision=forced)
+            except Exception as e:
+                raise fail(e) from e
+            cache.pop("scoreboard", None)
+            return JSONResponse(
+                with_proof(_decision_view(result.decision, result), result)
+            )
+
         # A decide that has to embed caller-chosen text costs money whether or
         # not anything is generated, so the budget is reserved at the moment the
         # gateway is about to make that call and not before: an exact repeat is
@@ -286,7 +347,7 @@ def create_app(
         except Exception as e:
             raise fail(e) from e
 
-        view = _decision_view(result.decision, result)
+        view = with_proof(_decision_view(result.decision, result), result)
         if result.decision.verdict is Verdict.REVIEW and result.decision.candidate:
             view["accept_token"] = mint_accept_token(
                 result.decision.candidate.entry.asset_id,
@@ -354,7 +415,7 @@ def create_app(
         except Exception as e:
             raise fail(e) from e
         cache.pop("scoreboard", None)
-        return JSONResponse(_decision_view(result.decision, result))
+        return JSONResponse(with_proof(_decision_view(result.decision, result), result))
 
     @app.get("/api/scoreboard")
     def scoreboard() -> dict[str, Any]:

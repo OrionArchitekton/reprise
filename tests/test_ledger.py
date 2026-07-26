@@ -8,7 +8,6 @@ in-memory test can only prove passthrough, never that the lock binds.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import pytest
 from genblaze_core.storage.base import ObjectLockConfig
@@ -18,21 +17,9 @@ from reprise.model import Candidate, Decision, Request, Verdict
 from tests.test_classify import entry
 from tests.test_library import MemoryBackend
 
-
-class LockRecordingBackend(MemoryBackend):
-    """MemoryBackend that mirrors genblaze-s3's extended put() signature."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.locks: dict[str, ObjectLockConfig | None] = {}
-
-    def put(self, key: str, data: Any, *, content_type: str | None = None,
-            metadata: dict[str, str] | None = None,
-            extra_args: dict[str, Any] | None = None,
-            object_lock: ObjectLockConfig | None = None) -> str:
-        self.locks[key] = object_lock
-        return super().put(key, data, content_type=content_type,
-                           metadata=metadata, extra_args=extra_args)
+# MemoryBackend now mirrors genblaze-s3's extended put() and records the lock
+# itself, so this name is kept only because the lock tests read better with it.
+LockRecordingBackend = MemoryBackend
 
 
 def fixed_clock() -> datetime:

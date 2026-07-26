@@ -74,6 +74,7 @@ class Gateway:
         self._ledger = ledger
         self._providers = providers
         self._prefix = prefix
+        self.prefix = prefix
         self._ttl = serve_url_ttl
         self.library = B2Library(backend, prefix=prefix)
 

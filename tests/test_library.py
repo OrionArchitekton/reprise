@@ -28,11 +28,18 @@ class MemoryBackend(StorageBackend):
 
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.locks: dict[str, Any] = {}
 
     def put(self, key: str, data: Any, *, content_type: str | None = None,
             metadata: dict[str, str] | None = None,
-            extra_args: dict[str, Any] | None = None) -> str:
+            extra_args: dict[str, Any] | None = None,
+            object_lock: Any = None) -> str:
+        # Mirrors genblaze-s3's extended signature. A double that rejects
+        # object_lock makes every locked write look like a backend failure,
+        # which is exactly the fail-closed path, so the app under test would
+        # 503 for a reason production never has.
         self.objects[key] = data if isinstance(data, bytes) else data.read()
+        self.locks[key] = object_lock
         return key
 
     def get(self, key: str) -> bytes:

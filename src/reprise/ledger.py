@@ -70,6 +70,19 @@ class Ledger:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._seq = 0
 
+    @property
+    def retention(self) -> tuple[str, int | None]:
+        """(mode, days) actually in force for new writes.
+
+        Read from the same state `_lock_for_write` uses, so the UI cannot
+        advertise an object-locked ledger that this instance is not writing.
+        """
+        if self._retain_days is not None:
+            return ("GOVERNANCE", self._retain_days)
+        if self._lock is not None:
+            return ("GOVERNANCE", None)
+        return ("none", None)
+
     # -- writes ------------------------------------------------------------
 
     def record(self, decision: Decision) -> str:

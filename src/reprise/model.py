@@ -65,6 +65,10 @@ class LibraryEntry:
     created_at: datetime
     aspect_ratio: str | None = None
     style: str | None = None
+    # The canonical hash of the manifest this entry was projected from. Carried
+    # so the proof receipt can quote a value a viewer can re-derive from the
+    # stored manifest, rather than a boolean the server asserts about itself.
+    manifest_hash: str = ""
     # Optional dense vector of the prompt, used for near-match. Absent entries
     # can still be matched exactly.
     embedding: tuple[float, ...] | None = None

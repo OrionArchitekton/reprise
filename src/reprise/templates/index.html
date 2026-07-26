@@ -52,6 +52,12 @@
   .meta { color: var(--dim); font-size: 13px; font-family: var(--mono); margin-top: 10px;
           word-break: break-all; }
   .actions { margin-top: 14px; display: flex; gap: 10px; }
+  .receipt { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .receipt summary { color: var(--dim); font-size: 13px; cursor: pointer; }
+  .receipt dl { display: grid; grid-template-columns: 170px 1fr; gap: 4px 14px;
+                margin: 10px 0 0; font-family: var(--mono); font-size: 12.5px; }
+  .receipt dt { color: var(--dim); }
+  .receipt dd { margin: 0; word-break: break-all; }
   footer { color: var(--dim); font-size: 13px; margin-top: 40px; }
   footer a { color: var(--blue); }
 </style>
@@ -153,19 +159,43 @@ function card(d) {
     use.addEventListener("click", () =>
       accept(d.prompt, d.modality, d.candidate.asset_id, d.accept_token));
     const fresh = el("button", null, "Generate fresh instead");
-    fresh.addEventListener("click", () =>
-      alert("Generation would proceed here; in the demo, rerun with a novel prompt."));
+    fresh.addEventListener("click", () => submit(d.prompt, d.modality, true));
     actions.appendChild(use);
     actions.appendChild(fresh);
     root.appendChild(actions);
   }
 
-  const sha = (d.candidate && d.candidate.sha256) || (d.new_entry && d.new_entry.sha256) || "";
-  if (sha) {
-    root.appendChild(el("div", "meta",
-      `sha256 ${sha.slice(0, 16)}... · provenance manifest in B2`));
-  }
+  if (d.proof) root.appendChild(receipt(d.proof));
   return root;
+}
+
+// Every row is a coordinate the viewer can check for themselves against the
+// bucket: fetch the manifest, recompute its canonical hash, compare; fetch the
+// object, hash the bytes, compare. A "verified" badge would just be us
+// vouching for ourselves.
+function receipt(p) {
+  const box = el("details", "receipt");
+  box.appendChild(el("summary", null, "proof receipt: where this came from"));
+  const dl = el("dl");
+  const rows = [
+    ["Genblaze run", p.run_id],
+    ["manifest (B2)", p.manifest_key],
+    ["manifest hash", p.manifest_hash],
+    ["asset (B2)", p.asset_key],
+    ["sha256", p.sha256],
+    ["produced by", `${p.provider} / ${p.model}`],
+    ["original cost", `$${Number(p.cost_usd).toFixed(4)}`],
+    ["ledger lock", p.object_lock.retain_days
+      ? `${p.object_lock.mode}, ${p.object_lock.retain_days} days`
+      : p.object_lock.mode],
+  ];
+  for (const [k, v] of rows) {
+    if (!v) continue;
+    dl.appendChild(el("dt", null, k));
+    dl.appendChild(el("dd", null, String(v)));
+  }
+  box.appendChild(dl);
+  return box;
 }
 
 function showCard(node) {
@@ -186,22 +216,25 @@ async function refreshBoard() {
   document.getElementById("s-saved").textContent = "$" + s.saved_usd.toFixed(2);
 }
 
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  go.disabled = true; go.textContent = "checking the library...";
+async function submit(prompt, modality, force) {
+  go.disabled = true;
+  go.textContent = force ? "generating a fresh asset..." : "checking the library...";
   try {
     const resp = await fetch("/api/decide", {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        prompt: document.getElementById("prompt").value,
-        modality: document.getElementById("modality").value,
-      }),
+      body: JSON.stringify({prompt, modality, force: !!force}),
     });
     const data = await resp.json();
     if (resp.ok) showCard(card(data));
     else showError(typeof data.detail === "string" ? data.detail : "request failed");
     refreshBoard();
   } finally { go.disabled = false; go.textContent = "Do I already own this?"; }
+}
+
+form.addEventListener("submit", (e) => {
+  e.preventDefault();
+  submit(document.getElementById("prompt").value,
+         document.getElementById("modality").value, false);
 });
 
 async function accept(prompt, modality, asset_id, token) {

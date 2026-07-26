@@ -70,6 +70,7 @@ def entries_from_manifest(data: dict[str, Any] | Manifest) -> list[LibraryEntry]
                     created_at=run.created_at,
                     aspect_ratio=aspect_meta or _ratio(asset.width, asset.height),
                     style=style_meta,
+                    manifest_hash=manifest.canonical_hash or "",
                 )
             )
     return entries

@@ -29,7 +29,11 @@ def build(
     cap: int = 25, decision_cap: int = 400, embedder: CountingEmbedder | None = None
 ) -> tuple[TestClient, MemoryBackend, Ledger, Gateway]:
     backend = MemoryBackend()
-    ledger = Ledger(backend, prefix="reprise", clock=lambda: datetime.now(UTC))
+    # retain_days mirrors production: the app reads its lock state from the
+    # ledger, so a test double without it would advertise a lock nobody writes.
+    ledger = Ledger(
+        backend, prefix="reprise", retain_days=30, clock=lambda: datetime.now(UTC)
+    )
     gw = Gateway(
         backend,
         embedder or CountingEmbedder(),
@@ -312,3 +316,51 @@ def test_an_accept_token_cannot_be_replayed_to_inflate_savings() -> None:
     assert replay.status_code == 409
     assert ledger.summarize().accepts == 1
     assert ledger.summarize().saved_usd == 0.05
+
+
+def test_every_result_carries_a_checkable_proof_receipt() -> None:
+    """Judges (and users) must be able to check the provenance claim.
+
+    The system knew the run id, the manifest key, the B2 object key, the digest
+    and the manifest's canonical hash all along; none of it reached the
+    response, so "every asset carries a provenance manifest" was a claim the UI
+    asserted about itself. Each field here is one a viewer can re-derive from
+    the bucket.
+    """
+    client, *_ = build()
+    generated = client.post("/api/decide", json={"prompt": PROMPT}).json()
+    reused = client.post("/api/decide", json={"prompt": PROMPT}).json()
+
+    for body in (generated, reused):
+        proof = body["proof"]
+        assert proof["run_id"]
+        assert proof["manifest_key"] == f"reprise/manifests/{proof['run_id']}.json"
+        assert proof["asset_key"].startswith("reprise/assets/")
+        assert len(proof["sha256"]) == 64
+        assert len(proof["manifest_hash"]) == 64
+        assert proof["object_lock"]["mode"] == "GOVERNANCE"
+        assert proof["provider"] and proof["model"]
+
+
+def test_generate_fresh_overrides_a_reuse_and_costs_generation_budget() -> None:
+    """"Generate fresh instead" has to actually generate.
+
+    It was an alert() stub, so the only choice a reviewer could really make was
+    "accept". An override must reach the provider, book generation budget, and
+    file a NEW asset rather than re-serving the one being rejected.
+    """
+    client, _, ledger, _ = build()
+    client.post("/api/decide", json={"prompt": PROMPT}).json()
+    embeds_before = ledger.spend_reservations_today(("reserve_embed",))
+
+    fresh = client.post("/api/decide", json={"prompt": PROMPT, "force": True}).json()
+
+    # Without force this exact prompt reuses; the override must reach the
+    # provider instead. (Asset ids can repeat: identical bytes are meant to
+    # land on one content-addressed key.)
+    assert fresh["verdict"] == "generate"
+    assert fresh["new_entry"] is not None
+    assert ledger.summarize().generates == 2
+    assert ledger.spend_reservations_today(("reserve_generate",)) == 2
+    # The override skips the library entirely, so it must not pay to embed.
+    assert ledger.spend_reservations_today(("reserve_embed",)) == embeds_before
