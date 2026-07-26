@@ -35,7 +35,15 @@ import math
 from collections.abc import Iterable, Sequence
 
 from reprise.decide import _rank, normalize_prompt, substitutable
-from reprise.model import Candidate, Decision, LibraryEntry, Request
+from reprise.model import Candidate, Decision, LibraryEntry, Request, Verdict
+
+# The acceptance lines (operator decision, 2026-07-26): auto-serve at or above
+# AUTO_REUSE_THRESHOLD, queue a human review down to REVIEW_THRESHOLD, generate
+# below that. The known cost of the bolder auto line -- attribute swaps such as
+# "red" vs "blue" can score above it -- is measured by the eval set and
+# disclosed in the README, never hidden.
+AUTO_REUSE_THRESHOLD = 0.97
+REVIEW_THRESHOLD = 0.85
 
 
 def cosine(a: Sequence[float], b: Sequence[float]) -> float:
@@ -86,34 +94,57 @@ def score_candidates(
     return _rank(scored)
 
 
-# ---------------------------------------------------------------------------
-# TODO(dan): implement the acceptance policy.
-#
-# `score_candidates` has already done the mechanical work: hard constraints are
-# filtered, survivors are scored, and the list arrives ranked best-first. What is
-# left is the product judgement -- where the lines sit and whether there is a
-# middle band at all.
-#
-# Things worth deciding:
-#   * The auto-reuse line. Above what similarity do we serve WITHOUT a human?
-#     Prompt embeddings routinely put unrelated-but-same-domain prompts around
-#     0.80-0.88, and "red" vs "blue" variants well above 0.95, so this number
-#     does real work.
-#   * Whether a REVIEW band exists between "obviously fine" and "obviously not".
-#     A review band turns some false reuses into a human decision, but a band
-#     nobody actions is just a slower GENERATE.
-#   * Whether an exact match should short-circuit the thresholds entirely.
-#   * What `saved_usd` should be for a REVIEW. Counting a review as savings
-#     inflates the headline number before anyone has accepted it, and that
-#     number goes on the scoreboard the judges read.
-#
-# Return a Decision. `_rank` output is best-first; `candidates[0]` is the winner
-# and the rest are alternatives. Populate `reason` -- it is written verbatim into
-# the audit ledger and shown in the UI.
-#
-# You will need `Verdict` from reprise.model; it is not imported above precisely
-# because nothing references it until this policy exists.
-# ---------------------------------------------------------------------------
 def classify(request: Request, candidates: Sequence[Candidate]) -> Decision:
-    """Turn scored candidates into a REUSE / REVIEW / GENERATE decision."""
-    raise NotImplementedError("acceptance policy not yet implemented")
+    """Turn scored candidates into a REUSE / REVIEW / GENERATE decision.
+
+    `candidates` must arrive ranked best-first (`score_candidates` output).
+    An exact match short-circuits the thresholds. A REVIEW saves nothing:
+    `saved_usd` counts only money a human (or the exact/auto path) has actually
+    agreed was saved, so the scoreboard the judges read is never inflated by
+    unaccepted reviews.
+    """
+    if not candidates:
+        return Decision(
+            verdict=Verdict.GENERATE,
+            request=request,
+            reason="no substitutable asset in the library",
+        )
+
+    winner, *rest = candidates
+    alternatives = tuple(rest)
+    sim = winner.similarity
+
+    if winner.exact:
+        verdict, saved = Verdict.REUSE, winner.entry.cost_usd
+        reason = (
+            f"exact prompt match against run {winner.entry.run_id} "
+            f"({winner.entry.provider}/{winner.entry.model})"
+        )
+    elif sim >= AUTO_REUSE_THRESHOLD:
+        verdict, saved = Verdict.REUSE, winner.entry.cost_usd
+        reason = (
+            f"similarity {sim:.2f} >= auto-reuse line {AUTO_REUSE_THRESHOLD}: "
+            f"serving {winner.entry.asset_id} from run {winner.entry.run_id}"
+        )
+    elif sim >= REVIEW_THRESHOLD:
+        verdict, saved = Verdict.REVIEW, 0.0
+        reason = (
+            f"similarity {sim:.2f} in review band "
+            f"[{REVIEW_THRESHOLD}, {AUTO_REUSE_THRESHOLD}): human decides; "
+            f"accepting would save ${winner.entry.cost_usd:.2f}"
+        )
+    else:
+        return Decision(
+            verdict=Verdict.GENERATE,
+            request=request,
+            reason=f"best similarity {sim:.2f} below review line {REVIEW_THRESHOLD}",
+        )
+
+    return Decision(
+        verdict=verdict,
+        request=request,
+        candidate=winner,
+        saved_usd=saved,
+        reason=reason,
+        alternatives=alternatives,
+    )
