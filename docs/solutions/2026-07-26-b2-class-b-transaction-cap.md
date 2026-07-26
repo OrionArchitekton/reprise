@@ -105,3 +105,45 @@ After the cap resets, `python tools/smoke.py <base-url>` must pass end to end.
 A health check that touches nothing cannot see an outage of everything. Probe
 the path the user uses, and make sure a storage failure can never be read as a
 business fact ("you do not own this") that authorises spend.
+
+## Follow-up, 2026-07-26 21:50 UTC: the same two defects, one call deeper
+
+While reads were still capped, an audit of what a request costs found both of
+the above bugs surviving in the embedding-sidecar path, which the first round
+of fixes did not reach.
+
+**Read amplification.** The scan cache holds the projection, but vectors are
+attached to it afterwards, in `ensure_embeddings`. So every non-exact request
+still performed one HEAD plus one GET per distinct prompt in the library, warm
+cache or not: the same O(library) billed read on the same hot path, one call
+further down. Sidecars are content-addressed by prompt fingerprint and written
+once, so they are now memoized per process (bounded, insertion-ordered
+eviction). A warm instance performs zero object reads for known prompts.
+
+**A storage failure read as a business fact, again.** The sidecar read asked
+`exists()` first. `genblaze-s3` deliberately reports 403/AccessDenied as "does
+not exist", because a least-privilege B2 key gets 403 for HEAD on an absent
+key, and an exhausted transaction cap denies reads with exactly that status. So
+a capped bucket was indistinguishable from an empty cache, and the response to
+an empty cache is to buy a new embedding and store it: per prompt, per request,
+silently. The read now goes straight to `get()` and only a typed
+`StorageErrorCode.NOT_FOUND` counts as absence; anything else is refused
+upward. Dropping the `exists()` probe also halves the cold-path cost.
+
+This one did not fire in production only because the manifest reads fail first
+and `LibraryUnavailable` short-circuits the request. That is incidental
+protection, not designed protection: with a warm 120s projection cache and a
+cap that trips mid-window, the sidecar path would have run blind.
+
+**What made it hard to see.** The in-memory `StorageBackend` double raised
+`KeyError` for a missing object where the real backend raises a typed
+`StorageError`. A double that does not mirror the production error shape lets
+"handle absence" and "swallow a failure" look like the same code.
+
+Guards added at both seams: the gateway test prices a warm near-duplicate
+request end to end (the two caches live in different objects, so only a real
+request proves they compose), and the library test disables the memo to show
+the reads come back, since a cache test that passes with the cache off is
+measuring nothing.
+
+Commits: `18c347b`, `955d0f3`.
