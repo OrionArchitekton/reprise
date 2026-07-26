@@ -316,3 +316,29 @@ def test_an_unreadable_sidecar_is_not_treated_as_a_missing_one() -> None:
 
     assert embedder.calls == 0  # nothing was re-embedded on a blind read
     assert not [k for k in backend.objects if "/embeddings/" in k]
+
+
+def test_the_memo_is_what_makes_a_warm_read_free() -> None:
+    """Prove the control binds: turn it off and the reads come back.
+
+    A cache test that passes both with and without the cache is measuring
+    nothing. `vector_cache_max=0` disables the memo, which is the state the
+    code was in when a request cost one read per library prompt.
+    """
+    backend = seeded_backend()
+    embedder = HashEmbedder()
+    entries = B2Library(backend, prefix="reprise").scan()
+
+    off = B2Library(backend, prefix="reprise", vector_cache_max=0)
+    off.ensure_embeddings(entries, embedder)
+    baseline = backend.gets
+    off.ensure_embeddings(entries, embedder)
+    uncached_cost = backend.gets - baseline
+
+    on = B2Library(backend, prefix="reprise")
+    on.ensure_embeddings(entries, embedder)
+    baseline = backend.gets
+    on.ensure_embeddings(entries, embedder)
+
+    assert uncached_cost > 0  # this is what every request used to pay
+    assert backend.gets == baseline

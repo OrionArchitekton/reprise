@@ -233,3 +233,25 @@ def test_the_manifest_behind_a_result_can_be_opened() -> None:
     assert f"reprise/manifests/{r.new_entry.run_id}.json" in url
     with pytest.raises(ValueError, match="refusing"):
         gw.manifest_url("../ledger/secret")
+
+
+def test_a_warm_gateway_answers_a_near_dupe_without_billed_reads() -> None:
+    """The whole outage in one assertion: what does a repeat request cost?
+
+    Reads are what B2 bills as Class B, and exhausting that cap is what took
+    the demo down. The two caches sit in different objects (the projection in
+    the scan cache, the vectors in the sidecar memo), so only a request driven
+    through the real entry point proves they compose into zero. A regression in
+    either one shows up here as a number greater than zero, long before it
+    shows up as an outage.
+    """
+    backend = MemoryBackend()
+    gw = make_gateway(backend, CountingEmbedder())
+    gw.handle(Request(prompt="a red bicycle against a white wall", modality="image"))
+    gw.preview(Request(prompt="a blue bicycle against a white wall", modality="image"))
+
+    reads_before = backend.gets
+    d = gw.preview(Request(prompt="a green bicycle against a white wall", modality="image"))
+
+    assert d.verdict is Verdict.REVIEW
+    assert backend.gets == reads_before, "a warm request must read no objects"

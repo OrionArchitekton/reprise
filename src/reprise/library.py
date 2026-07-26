@@ -167,7 +167,9 @@ class B2Library:
             raise
 
     def _remember(self, embedder_name: str, fp: str, vector: tuple[float, ...]) -> None:
-        if len(self._vectors) >= self._vector_cache_max:
+        if self._vector_cache_max <= 0:
+            return  # 0 disables the memo, so a test can price the uncached path
+        while len(self._vectors) >= self._vector_cache_max:
             # Insertion-ordered: drop the oldest. Eviction only costs a re-read,
             # never correctness, so the simplest policy is the right one here.
             self._vectors.pop(next(iter(self._vectors)))
