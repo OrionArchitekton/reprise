@@ -44,11 +44,14 @@ class MemoryBackend(StorageBackend):
     def delete(self, key: str) -> None:
         self.objects.pop(key, None)
 
+    # Path-style, bucket-in-path, exactly like the real S3/B2 URLs the sink
+    # writes into manifests. A shorter fake shape made ingest's bucket-segment
+    # strip mangle every storage_key in tests while looking green.
     def get_url(self, key: str, *, expires_in: int = 3600) -> str:
-        return f"memory://{key}?exp={expires_in}"
+        return f"memory://memory-host/bucket/{key}?exp={expires_in}"
 
     def get_durable_url(self, key: str) -> str:
-        return f"memory://{key}"
+        return f"memory://memory-host/bucket/{key}"
 
     def list(self, prefix: str = "", *, max_keys: int = 1000,
              continuation_token: str | None = None) -> ListPage:

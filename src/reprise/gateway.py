@@ -64,7 +64,10 @@ class Gateway:
         providers: dict[str, ProviderSpec],
         *,
         prefix: str = "reprise",
-        serve_url_ttl: int = 3600,
+        # Short by default: a presigned URL embeds the access-key-id in its
+        # X-Amz-Credential and is a bearer read capability for its whole life,
+        # so it should outlive a page view and little else.
+        serve_url_ttl: int = 300,
     ) -> None:
         self._backend = backend
         self._embedder = embedder
@@ -72,7 +75,7 @@ class Gateway:
         self._providers = providers
         self._prefix = prefix
         self._ttl = serve_url_ttl
-        self._library = B2Library(backend, prefix=prefix)
+        self.library = B2Library(backend, prefix=prefix)
 
     # -- the one entry point ----------------------------------------------
 
@@ -83,27 +86,33 @@ class Gateway:
         a REUSE/REVIEW preview is always safe to act on, a GENERATE preview
         tells the caller that proceeding will cost money.
         """
-        return self._decide(request, self._library.scan())
+        return self._decide(request, self.library.scan())
 
     def _decide(self, request: Request, entries: list[LibraryEntry]) -> Decision:
         # Free path first: exact match needs no embedding call.
         decision = decide(request, entries)
         if decision.verdict is not Verdict.REUSE:
-            embedded = self._library.ensure_embeddings(entries, self._embedder)
+            embedded = self.library.ensure_embeddings(entries, self._embedder)
             request_vec = self._embedder.embed(request.prompt)
             candidates = score_candidates(request, request_vec, embedded)
             decision = classify(request, candidates)
         return decision
 
-    def handle(self, request: Request) -> GatewayResult:
-        decision = self._decide(request, self._library.scan())
+    def handle(self, request: Request, decision: Decision | None = None) -> GatewayResult:
+        """Act on a request. Pass a `decision` from `preview()` to reuse it.
+
+        Re-deciding here would repeat the whole library scan AND a billed
+        embedding call for the same request, so a caller that previews (to
+        check a spend cap) and then handles pays twice for one answer. Passing
+        the preview decision through removes that duplicate spend entirely.
+        """
+        if decision is None:
+            decision = self._decide(request, self.library.scan())
 
         if decision.verdict is Verdict.REUSE:
             assert decision.candidate is not None
+            url = self._serve_url(decision.candidate.entry.storage_key)
             self._ledger.record(decision)
-            url = self._backend.get_url(
-                decision.candidate.entry.storage_key, expires_in=self._ttl
-            )
             return GatewayResult(decision=decision, serve_url=url)
 
         if decision.verdict is Verdict.REVIEW:
@@ -115,18 +124,32 @@ class Gateway:
         # not as a ledger row claiming work that never completed.
         entry = self._generate(request)
         self._ledger.record(decision)
-        url = self._backend.get_url(entry.storage_key, expires_in=self._ttl)
+        url = self._serve_url(entry.storage_key)
         return GatewayResult(decision=decision, serve_url=url, new_entry=entry)
 
     def accept_review(self, decision: Decision) -> GatewayResult:
         """A human accepted a REVIEW candidate: serve it and book the saving."""
         if decision.verdict is not Verdict.REVIEW or decision.candidate is None:
             raise ValueError("accept_review requires a REVIEW decision with a candidate")
+        url = self._serve_url(decision.candidate.entry.storage_key)
         self._ledger.record_accept(decision)
-        url = self._backend.get_url(
-            decision.candidate.entry.storage_key, expires_in=self._ttl
-        )
         return GatewayResult(decision=decision, serve_url=url)
+
+    def _serve_url(self, storage_key: str) -> str:
+        """Mint a short-lived URL, but only for keys inside our asset tree.
+
+        `storage_key` comes from a manifest, and a shared bucket accumulates
+        manifests this app did not write. Without this containment check, a
+        manifest pointing anywhere in the bucket would turn the serve path
+        into a presigned-URL oracle for arbitrary objects, including the
+        ledger itself.
+        """
+        allowed = f"{self._prefix}/assets/"
+        if not storage_key.startswith(allowed):
+            raise ValueError(
+                f"refusing to serve {storage_key!r}: outside {allowed!r}"
+            )
+        return self._backend.get_url(storage_key, expires_in=self._ttl)
 
     # -- generation --------------------------------------------------------
 

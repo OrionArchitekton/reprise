@@ -24,6 +24,7 @@ Design notes:
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -122,7 +123,15 @@ class Ledger:
     def _write(self, doc: dict[str, Any], prompt: str) -> str:
         self._seq += 1
         ts = self._clock().strftime("%Y%m%dT%H%M%S.%fZ")
-        key = f"{self._prefix}/ledger/{ts}-{self._seq:06d}-{prompt_fingerprint(prompt)[:8]}.json"
+        # uuid4 suffix, not just the per-instance counter: on serverless every
+        # instance starts its counter at 1, so two instances recording the same
+        # prompt in the same microsecond would collide and silently lose a
+        # record (and with it, a unit of the rate limiter's count).
+        nonce = uuid.uuid4().hex[:8]
+        key = (
+            f"{self._prefix}/ledger/{ts}-{self._seq:06d}-"
+            f"{prompt_fingerprint(prompt)[:8]}-{nonce}.json"
+        )
         data = json.dumps(doc, sort_keys=True).encode()
         if self._lock is not None:
             # genblaze-s3 extends put() with a first-class object_lock kwarg;
@@ -133,6 +142,31 @@ class Ledger:
         else:
             self._backend.put(key, data, content_type="application/json")
         return key
+
+    def reserve_spend(self, request_prompt: str, kind: str) -> str:
+        """Book an intent to spend BEFORE the money leaves.
+
+        The cap counts ledger records, so a record written only after a
+        successful generation makes the counter fail OPEN: a generation that
+        succeeds but whose ledger write fails costs money that is never
+        counted, and the counter can freeze while `generation_available` stays
+        true forever. Reserving first inverts that: the spend is counted even
+        if everything downstream fails, and a reservation write that fails
+        propagates (the caller must treat it as cap-exhausted, never as
+        permission to spend).
+
+        Reservations are their own `kind` so the audit trail distinguishes
+        "we intended to spend" from "we did spend and here is the asset".
+        """
+        return self._write(
+            {
+                "schema": LEDGER_SCHEMA,
+                "kind": kind,
+                "ts": self._clock().isoformat(),
+                "prompt": request_prompt,
+            },
+            request_prompt,
+        )
 
     # -- reads -------------------------------------------------------------
 
@@ -149,11 +183,24 @@ class Ledger:
                 break
         return out
 
+    def spend_reservations_today(self, kinds: tuple[str, ...]) -> int:
+        """Count today's spend reservations (the cap's source of truth)."""
+        today = self._clock().date().isoformat()
+        return sum(
+            1
+            for doc in self.entries()
+            if doc.get("kind") in kinds
+            and str(doc.get("ts", "")).startswith(today)
+        )
+
     def summarize(self) -> Scoreboard:
         reuses = reviews = generates = accepts = 0
         saved = 0.0
         for doc in self.entries():
-            if doc.get("kind") == "accept":
+            kind = doc.get("kind")
+            if kind in ("reserve_generate", "reserve_embed"):
+                continue  # intents, not outcomes: never scored
+            if kind == "accept":
                 accepts += 1
                 saved += float(doc.get("saved_usd", 0.0))
                 continue

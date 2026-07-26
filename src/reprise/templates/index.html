@@ -87,7 +87,7 @@
     <div class="card reuse">
       <div class="verdict">reuse</div>
       <div class="headline">You already own this. Saved $0.04.</div>
-      <div class="reason">exact prompt match against run 5191... (gemini-image/gemini-2.5-flash-image)</div>
+      <div class="reason">exact prompt match against run 47a8978b (gemini-image/gemini-2.5-flash-image)</div>
       <div class="meta">sha256 b5f8a11ffe64d4f0... &middot; served from Backblaze B2, nothing generated</div>
     </div>
   {% endif %}
@@ -96,8 +96,8 @@
   <footer>
     Decisions are recorded in an <b>Object-Lock ledger</b> on Backblaze B2 and every
     asset carries a Genblaze provenance manifest.
-    Near-matches auto-serve only above 0.97 similarity; 0.85&ndash;0.97 goes to human
-    review. Measured on a labeled set: 0/17 false auto-reuse
+    Near-matches auto-serve only at or above 0.97 similarity; 0.85 to 0.97 goes to
+    human review. Measured on a labeled set: 0/17 false auto-reuse
     (<a href="https://github.com/OrionArchitekton/reprise/blob/main/eval/report.md">eval report</a>).
   </footer>
 </main>
@@ -109,35 +109,74 @@ const go = document.getElementById("go");
 document.querySelectorAll(".presets button").forEach(b =>
   b.addEventListener("click", () => { document.getElementById("prompt").value = b.dataset.fill; }));
 
+// Everything below builds DOM nodes and sets textContent. Nothing from the
+// API is ever concatenated into an HTML string: the prompt round-trips into
+// `reason`, and a quote in it would otherwise break out of an attribute and
+// execute. Handlers are bound with addEventListener over closure values, so
+// no user text is ever parsed as markup or as JS.
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
 function card(d) {
-  const cls = d.verdict;
-  let head = "", body = "";
+  const root = el("div", "card " + d.verdict);
+  root.appendChild(el("div", "verdict", d.verdict));
+
+  let head;
   if (d.verdict === "reuse") {
     head = `You already own this. Saved $${d.saved_usd.toFixed(2)}.`;
   } else if (d.verdict === "review") {
-    head = `Close match found (${(d.candidate.similarity*100).toFixed(1)}% similar). Your call.`;
-    body = `<div class="actions">
-      <button class="primary" onclick='accept(${JSON.stringify(d.prompt)}, ${JSON.stringify(d.modality)}, ${JSON.stringify(d.candidate.asset_id)})'>
-        Use it (saves $${d.candidate.cost_usd.toFixed(2)})</button>
-      <button onclick="alert('Generation would proceed here; in the demo, rerun with a novel prompt.')">Generate fresh instead</button>
-    </div>`;
+    head = `Close match found (${(d.candidate.similarity * 100).toFixed(1)}% similar). Your call.`;
   } else {
-    head = d.new_entry ? `Generated fresh via ${d.new_entry.provider} ($${d.new_entry.cost_usd.toFixed(2)}) and filed in your library.`
-                       : "Nothing close in your library.";
+    head = d.new_entry
+      ? `Generated fresh via ${d.new_entry.provider} ($${d.new_entry.cost_usd.toFixed(2)}) and filed in your library.`
+      : "Nothing close in your library.";
   }
-  const media = d.serve_url
-    ? (d.modality === "audio"
-        ? `<div class="asset"><audio controls src="${d.serve_url}"></audio></div>`
-        : `<div class="asset"><img src="${d.serve_url}" alt=""></div>`)
-    : "";
+  root.appendChild(el("div", "headline", head));
+  root.appendChild(el("div", "reason", d.reason));
+
+  if (d.serve_url) {
+    const wrap = el("div", "asset");
+    const media = document.createElement(d.modality === "audio" ? "audio" : "img");
+    if (d.modality === "audio") media.controls = true; else media.alt = "";
+    media.src = d.serve_url;
+    wrap.appendChild(media);
+    root.appendChild(wrap);
+  }
+
+  if (d.verdict === "review" && d.accept_token) {
+    const actions = el("div", "actions");
+    const use = el("button", "primary", `Use it (saves $${d.candidate.cost_usd.toFixed(2)})`);
+    use.addEventListener("click", () =>
+      accept(d.prompt, d.modality, d.candidate.asset_id, d.accept_token));
+    const fresh = el("button", null, "Generate fresh instead");
+    fresh.addEventListener("click", () =>
+      alert("Generation would proceed here; in the demo, rerun with a novel prompt."));
+    actions.appendChild(use);
+    actions.appendChild(fresh);
+    root.appendChild(actions);
+  }
+
   const sha = (d.candidate && d.candidate.sha256) || (d.new_entry && d.new_entry.sha256) || "";
-  return `<div class="card ${cls}">
-    <div class="verdict">${d.verdict}</div>
-    <div class="headline">${head}</div>
-    <div class="reason">${d.reason}</div>
-    ${media}${body}
-    ${sha ? `<div class="meta">sha256 ${sha.slice(0,16)}... &middot; provenance manifest in B2</div>` : ""}
-  </div>`;
+  if (sha) {
+    root.appendChild(el("div", "meta",
+      `sha256 ${sha.slice(0, 16)}... · provenance manifest in B2`));
+  }
+  return root;
+}
+
+function showCard(node) {
+  result.replaceChildren(node);
+}
+
+function showError(text) {
+  const root = el("div", "card review");
+  root.appendChild(el("div", "verdict", "error"));
+  root.appendChild(el("div", "reason", text));
+  showCard(root);
 }
 
 async function refreshBoard() {
@@ -159,20 +198,20 @@ form.addEventListener("submit", async (e) => {
       }),
     });
     const data = await resp.json();
-    result.innerHTML = resp.ok
-      ? card(data)
-      : `<div class="card review"><div class="verdict">error</div><div class="reason">${data.detail}</div></div>`;
+    if (resp.ok) showCard(card(data));
+    else showError(typeof data.detail === "string" ? data.detail : "request failed");
     refreshBoard();
   } finally { go.disabled = false; go.textContent = "Do I already own this?"; }
 });
 
-async function accept(prompt, modality, asset_id) {
+async function accept(prompt, modality, asset_id, token) {
   const resp = await fetch("/api/accept", {
     method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({prompt, modality, asset_id}),
+    body: JSON.stringify({prompt, modality, asset_id, token}),
   });
   const data = await resp.json();
-  if (resp.ok) { result.innerHTML = card({...data, verdict: "reuse"}); refreshBoard(); }
+  if (resp.ok) { showCard(card({...data, verdict: "reuse"})); refreshBoard(); }
+  else showError(typeof data.detail === "string" ? data.detail : "accept failed");
 }
 </script>
 </body>
