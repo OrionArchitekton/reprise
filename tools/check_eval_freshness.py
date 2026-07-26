@@ -95,5 +95,37 @@ def main() -> None:
     )
 
 
+
+
+def check_test_count() -> None:
+    """The README quotes a test count; keep it honest against pytest itself."""
+    import re
+    import subprocess
+
+    readme = (ROOT / "README.md").read_text()
+    m = re.search(r"runs the (\d+)-test suite", readme)
+    if not m:
+        fail("README no longer states a test count in the expected form")
+    claimed = int(m.group(1))
+    out = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:warnings"],
+        cwd=ROOT, capture_output=True, text=True, check=False,
+    ).stdout
+    # pyproject sets addopts="-q", so --collect-only -q prints per-file counts
+    # ("tests/test_x.py: 6") rather than a single "N tests collected" line.
+    total = re.search(r"(\d+) tests? collected", out)
+    collected = (
+        int(total.group(1))
+        if total
+        else sum(int(n) for n in re.findall(r"^\S+\.py: (\d+)$", out, re.M))
+    )
+    if not collected:
+        fail(f"could not read a collected-test count from pytest: {out[-200:]!r}")
+    if collected != claimed:
+        fail(f"README claims {claimed} tests, pytest collects {collected}")
+    print(f"test count consistent: {claimed}")
+
+
 if __name__ == "__main__":
     main()
+    check_test_count()
