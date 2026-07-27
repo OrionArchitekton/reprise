@@ -7,6 +7,8 @@ in-memory test can only prove passthrough, never that the lock binds.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -260,3 +262,70 @@ def test_a_forged_snapshot_cannot_invent_savings() -> None:
 
     assert after.reuses == 2, "a snapshot the app did not sign must not be believed"
     assert after.saved_usd == pytest.approx(0.10)
+
+
+def test_a_plausible_backdated_forgery_is_rejected_by_the_signature() -> None:
+    """The forgery that actually exercises the signature.
+
+    The first version of this regression forged through_day 29991231, which the
+    "a snapshot only covers completed days" check rejects BEFORE the HMAC is
+    ever compared. It therefore passed identically with the signature check
+    deleted: a gate observed only in the green state, which is the failure this
+    codebase has spent a week removing from other people's code.
+
+    A believable forgery is backdated. This one names a day that really has
+    finished, so every cheap structural check passes and only the signature is
+    left standing between an invented total and the page.
+    """
+    b = LockRecordingBackend()
+    now = [datetime(2026, 7, 25, 12, 0, tzinfo=UTC)]
+    led = Ledger(b, prefix="reprise", snapshot_secret=SNAP_KEY, clock=lambda: now[0])
+    led.record(reuse_decision(cost=0.05))
+    now[0] = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+    led.record(reuse_decision(cost=0.05))
+    assert led.summarize().reuses == 2
+
+    forged = {
+        "schema": LEDGER_SCHEMA,
+        "through_day": "20260725",  # a real, completed day: structurally valid
+        "totals": {
+            "reuses": 999,
+            "reviews": 0,
+            "generates": 0,
+            "accepts": 0,
+            "saved_usd": 9999.0,
+        },
+    }
+    forged["sig"] = hmac.new(
+        b"not-the-deployments-key", b"whatever", hashlib.sha256
+    ).hexdigest()
+    b.put("reprise/index/scoreboard.json", json.dumps(forged).encode())
+
+    after = Ledger(
+        b, prefix="reprise", snapshot_secret=SNAP_KEY, clock=lambda: now[0]
+    ).summarize()
+
+    assert after.reuses == 2, "a snapshot signed with another key must not be believed"
+    assert after.saved_usd == pytest.approx(0.10)
+
+
+def test_without_its_own_secret_no_snapshot_is_written_or_trusted() -> None:
+    """No key means no cache, rather than a cache anyone can sign.
+
+    The signature defends against whoever can write the bucket. Deriving its
+    key from the bucket credential would hand that same party the signing key,
+    so the scoreboard key has to be separate, and an absent one has to mean the
+    optimisation is off rather than that it silently falls back to a key the
+    attacker already holds.
+    """
+    b = LockRecordingBackend()
+    now = [datetime(2026, 7, 25, 12, 0, tzinfo=UTC)]
+    led = Ledger(b, prefix="reprise", snapshot_secret=b"", clock=lambda: now[0])
+    led.record(reuse_decision(cost=0.05))
+    now[0] = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+    led.record(reuse_decision(cost=0.05))
+
+    assert led.summarize().reuses == 2
+    assert "reprise/index/scoreboard.json" not in b.objects, (
+        "an unsignable snapshot must never be written"
+    )

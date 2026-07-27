@@ -175,6 +175,24 @@ def _accept_secret() -> bytes:
     return hashlib.sha256(b"reprise-accept-v1|" + base.encode()).digest()
 
 
+def _scoreboard_secret() -> bytes:
+    """The key that signs the scoreboard snapshot. Deliberately its OWN secret.
+
+    The threat this signature exists for is someone who can WRITE the bucket
+    prefix putting a plausible snapshot there, since the snapshot is not Object
+    Locked and short-circuits the records that are. Deriving the key from
+    B2_APP_KEY, as the accept tokens do, defeats exactly that: the credential
+    that lets an attacker write the forgery is the credential that lets them
+    sign it. A signature an attacker can produce is decoration.
+
+    So this reads one variable and nothing else. Unset means no snapshot is
+    written or trusted, and every total is folded from the ledger: slower, and
+    never wrong. Failing closed here would take the scoreboard down over a
+    missing performance key, which is the wrong trade for a cache.
+    """
+    return os.environ.get("REPRISE_SCOREBOARD_SECRET", "").encode()
+
+
 def mint_accept_token(
     asset_id: str, prompt: str, *, expires_at: int, secret: bytes, review_id: str
 ) -> str:
@@ -510,9 +528,7 @@ def build_production_app() -> FastAPI:
         backend,
         prefix="reprise",
         retain_days=retain_days,
-        # Same derived secret the accept tokens use: the snapshot is a cache of
-        # Object Locked history, so the app has to be able to prove it wrote it.
-        snapshot_secret=_accept_secret(),
+        snapshot_secret=_scoreboard_secret(),
     )
     gateway = Gateway(
         backend,
