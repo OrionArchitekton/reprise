@@ -81,11 +81,23 @@ registered. Confirm you are joined to the hackathon before submit day.
 1. ~~Upload the video to YouTube.~~ **Done 2026-07-27**:
    https://youtu.be/OhkccSow8hY. Verified public rather than unlisted, 158
    seconds, and the description carries the models list and both links.
-2. **Create the Devpost project and submit.** Operator only: the flow
-   re-challenges an invisible reCAPTCHA on automated clicks, and evading bot
-   detection is not something to attempt. `SUBMISSION.md` has every field ready
-   to paste, including the two Genblaze issue links that the 10x Feedback Prize
-   is judged on.
+2. ~~Create the Devpost project and submit.~~ **Done 2026-07-27**:
+   https://devpost.com/software/reprise-2s8tvi
+
+Verified from a signed-out fetch of the public project page, which is the view
+a judge gets: it reads "Submitted to" the hackathon (created and entered, not
+merely created), the video is embedded as youtube.com/embed/OhkccSow8hY, the
+live URL and repo are both linked, all ten Built-with tags are present, twelve
+gallery images uploaded, and the story text carries the models and the B2 and
+Genblaze explanation.
+
+**One thing left, and it is small.** The two Genblaze issue URLs are not on the
+page as links. They appear only inside the Challenges prose as "(genblaze
+issues #205 and #206)". The issues themselves are filed and open, which is what
+the 10x Feedback Prize is actually judged on, so nothing is disqualified. But a
+judge assessing that prize should not have to search for them. Paste the block
+from `SUBMISSION.md` into the project's "Additional info" field so they are one
+click away.
 
 ## Re-verify before submitting
 
