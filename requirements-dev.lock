@@ -1,0 +1,12 @@
+# The toolchain that produces the numbers this project publishes.
+#
+# These were installed unpinned in CI while everything else was locked, which
+# means a new ruff or mypy release could turn the build red, or quietly green,
+# with no change in the repo. For a project whose whole claim is that its
+# published numbers are pinned to their evidence, the tools deriving those
+# numbers have to be pinned too.
+#
+# Versions are the ones the suite is actually green under.
+mypy==2.3.0
+pytest==9.1.1
+ruff==0.16.0

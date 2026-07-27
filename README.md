@@ -121,6 +121,7 @@ embeddings for near-match scoring).
 
 ```bash
 pip install -r requirements.lock
+pip install -r requirements-dev.lock   # pytest, ruff, mypy: needed to run the suite
 
 export B2_KEY_ID=... B2_APP_KEY=... B2_BUCKET=... B2_REGION=...   # scoped key; bucket created WITH Object Lock
 export GEMINI_API_KEY=...
