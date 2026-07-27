@@ -43,8 +43,16 @@ https://reprise-murex.vercel.app
 https://github.com/OrionArchitekton/reprise
 ```
 
-**Video demo link**: the public YouTube URL from `YOUTUBE.md` (must be public,
-under 3:00).
+**Video demo link**
+
+```
+https://youtu.be/OhkccSow8hY
+```
+
+Uploaded 2026-07-27. Verified from a signed-out fetch: `isUnlisted:false`,
+`isPrivate:false`, `lengthSeconds:158` (2:38, under the 3:00 cap), and the
+description carries the AI providers and models list plus the live and repo
+links.
 
 **Image gallery**: upload `docs/screenshots/*` with the captions in
 `SCREENSHOT_CAPTIONS.md` (Devpost truncates long captions, so each is under 140
