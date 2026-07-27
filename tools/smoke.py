@@ -27,6 +27,25 @@ EXACT_PROMPT = "a red bicycle leaning against a white brick wall, product photo"
 TIMEOUT = 60
 
 
+def decode(raw: bytes) -> object:
+    """Parsed JSON, else text, else a description of the bytes.
+
+    The last case is the point: the final check fetches the served asset, whose
+    body is a PNG. `json.loads` raises UnicodeDecodeError on those bytes, NOT
+    JSONDecodeError, so guarding only against the latter let the ladder crash
+    on its last rung. That could only ever happen on the HAPPY path, which is
+    why a tool written during an outage had never reached it.
+    """
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        pass
+    try:
+        return raw.decode()
+    except UnicodeDecodeError:
+        return f"<{len(raw)} bytes of binary>"
+
+
 def call(url: str, body: dict[str, object] | None = None) -> tuple[int, object]:
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(
@@ -34,17 +53,9 @@ def call(url: str, body: dict[str, object] | None = None) -> tuple[int, object]:
     )
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-            raw = r.read()
-            try:
-                return r.status, json.loads(raw)
-            except json.JSONDecodeError:
-                return r.status, raw.decode(errors="replace")
+            return r.status, decode(r.read())
     except urllib.error.HTTPError as e:
-        raw = e.read()
-        try:
-            return e.code, json.loads(raw)
-        except json.JSONDecodeError:
-            return e.code, raw.decode(errors="replace")
+        return e.code, decode(e.read())
     except OSError as e:
         return 0, str(e)
 
@@ -55,8 +66,15 @@ def main() -> None:
     base = (args[0] if args else BASE).rstrip("/")
     failures: list[str] = []
 
-    def check(label: str, ok: bool, detail: object = "") -> None:
-        print(f"{'PASS' if ok else 'FAIL'}  {label}  {str(detail)[:150]}")
+    def check(label: str, ok: bool, detail: object = "", why: str = "") -> None:
+        """`detail` is evidence for either outcome; `why` explains a failure.
+
+        Printing a failure explanation next to a PASS is how a green run gets
+        misread: "PASS  scoreboard is readable  homepage is showing the
+        degraded scoreboard" says both things at once.
+        """
+        note = str(detail) if detail else (why if not ok else "")
+        print(f"{'PASS' if ok else 'FAIL'}  {label}  {note[:150]}")
         if not ok:
             failures.append(label)
 
@@ -78,7 +96,7 @@ def main() -> None:
     check(
         "scoreboard is readable (not degraded)",
         "ledger unreadable" not in str(page),
-        "homepage is showing the degraded scoreboard",
+        why="homepage is showing the degraded scoreboard",
     )
 
     status, board = call(f"{base}/api/scoreboard")
