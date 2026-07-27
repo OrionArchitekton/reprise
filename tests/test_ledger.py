@@ -7,12 +7,13 @@ in-memory test can only prove passthrough, never that the lock binds.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from genblaze_core.storage.base import ObjectLockConfig
 
-from reprise.ledger import Ledger
+from reprise.ledger import LEDGER_SCHEMA, Ledger
 from reprise.model import Candidate, Decision, Request, Verdict
 from tests.test_classify import entry
 from tests.test_library import MemoryBackend
@@ -20,6 +21,10 @@ from tests.test_library import MemoryBackend
 # MemoryBackend now mirrors genblaze-s3's extended put() and records the lock
 # itself, so this name is kept only because the lock tests read better with it.
 LockRecordingBackend = MemoryBackend
+
+# Any deployment that wants the snapshot optimisation configures a signing key;
+# without one the ledger simply recomputes, which is slower and always honest.
+SNAP_KEY = b"test-snapshot-key"
 
 
 def fixed_clock() -> datetime:
@@ -179,7 +184,7 @@ def test_scoreboard_folds_completed_days_into_a_snapshot() -> None:
     b = LockRecordingBackend()
     day1 = datetime(2026, 7, 25, 12, 0, tzinfo=UTC)
     now = [day1]
-    led = Ledger(b, prefix="reprise", clock=lambda: now[0])
+    led = Ledger(b, prefix="reprise", snapshot_secret=SNAP_KEY, clock=lambda: now[0])
     led.record(reuse_decision(cost=0.05))
     led.record(reuse_decision(cost=0.05))
 
@@ -205,3 +210,53 @@ def test_a_snapshot_never_covers_a_day_still_being_written() -> None:
     led.record(reuse_decision(cost=0.05))
 
     assert led.summarize().reuses == 2
+
+
+def test_a_forged_snapshot_cannot_invent_savings() -> None:
+    """The scoreboard's cache is not Object Locked. Its source is.
+
+    `index/scoreboard.json` short-circuits the ledger, and it is written
+    without a lock on purpose, because a cache that cannot be replaced is a
+    liability. That is fine right up until the cache is BELIEVED. Anyone able
+    to write the bucket prefix could set a future through_day and any totals
+    they liked, and the page would show them with no Object Lock trail, while
+    the records that are locked went unread.
+
+    The product's public claim is that every total on the board is folded from
+    records nobody can edit. A snapshot the app cannot authenticate is exactly
+    a number the ledger cannot back, so an unverifiable one must be discarded
+    and the totals recomputed, not trusted.
+    """
+    b = LockRecordingBackend()
+    day1 = datetime(2026, 7, 25, 12, 0, tzinfo=UTC)
+    now = [day1]
+    led = Ledger(b, prefix="reprise", snapshot_secret=SNAP_KEY, clock=lambda: now[0])
+    led.record(reuse_decision(cost=0.05))
+    now[0] = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+    led.record(reuse_decision(cost=0.05))
+    honest = led.summarize()
+    assert honest.reuses == 2
+
+    b.put(
+        "reprise/index/scoreboard.json",
+        json.dumps(
+            {
+                "schema": LEDGER_SCHEMA,
+                "through_day": "29991231",
+                "totals": {
+                    "reuses": 999,
+                    "reviews": 0,
+                    "generates": 0,
+                    "accepts": 0,
+                    "saved_usd": 9999.0,
+                },
+            }
+        ).encode(),
+    )
+
+    after = Ledger(
+        b, prefix="reprise", snapshot_secret=SNAP_KEY, clock=lambda: now[0]
+    ).summarize()
+
+    assert after.reuses == 2, "a snapshot the app did not sign must not be believed"
+    assert after.saved_usd == pytest.approx(0.10)

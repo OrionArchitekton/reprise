@@ -127,6 +127,24 @@ class B2Library:
             self._cached = (self._clock(), entries)
         return entries
 
+    def probe(self) -> None:
+        """One listing and one real object read. Never cached, constant cost.
+
+        Readiness used to call `scan()`, which answers from the per-process
+        cache, so once that cache was warm the probe reported ready for the
+        whole window regardless of what storage was doing. That is precisely
+        the shape of the Class B outage the probe exists to catch: listings
+        kept working, object reads did not, and readiness stayed green.
+
+        Cost does not grow with the library either, where a cold `scan()` reads
+        every manifest. Raises whatever the backend raises; the caller decides
+        what a failure means.
+        """
+        page = self._backend.list(f"{self._prefix}/manifests/", max_keys=1)
+        if not page.entries:
+            return  # an empty library is readable, it is just empty
+        self._backend.get(page.entries[0].key)
+
     # -- embeddings --------------------------------------------------------
 
     def ensure_embeddings(

@@ -27,12 +27,16 @@ must not be photographed.
 
 Written to `docs/screenshots/NN-slug.png`.
 
+**Paste each caption as ONE line.** They were written as wrapped blockquotes,
+and the continuation line's `> ` marker travelled with the copy into the live
+gallery, rendering as "...records in B2, not > from a counter the app can
+edit." Anything a human copies out of a doc has to survive being copied.
+
 ## 01-homepage.png
 
 Landing page with the savings scoreboard.
 
-> Every total on the scoreboard is folded from Object Lock records in B2, not
-> from a counter the app can edit.
+> Every total on the scoreboard is folded from Object Lock records in B2, not from a counter the app can edit.
 
 **Capture:** automated. Landing page at the top, scoreboard fully visible.
 
@@ -40,8 +44,7 @@ Landing page with the savings scoreboard.
 
 The exact-repeat result card.
 
-> An exact repeat is answered from the library before any model is called, and
-> the money not spent is booked as a saving.
+> An exact repeat is answered from the library before any model is called, and the money not spent is booked as a saving.
 
 **Capture:** automated. Clicks "try an exact repeat" and submits, then frames
 the result card from its top edge.
@@ -50,8 +53,7 @@ the result card from its top edge.
 
 The human review band.
 
-> Between 0.85 and 0.97 similarity a human decides. The request, the stored
-> prompt and the runner-up candidates are all shown side by side.
+> Between 0.85 and 0.97 similarity a human decides. The request, the stored prompt and the runner-up candidates are all shown side by side.
 
 **Capture:** automated. Clicks "try a near-duplicate" and submits. The frame
 holds the badge, the headline, the comparison rows and both action buttons.
@@ -60,8 +62,7 @@ holds the badge, the headline, the comparison rows and both action buttons.
 
 The receipt drawer, open.
 
-> The receipt names the run, model, stored key and manifest hash, and links
-> the manifest so a reader can recompute the hash.
+> The receipt names the run, model, stored key and manifest hash, and links the manifest so a reader can recompute the hash.
 
 **Capture:** automated. Expands the receipt drawer on the reuse card and
 frames the receipt with room under the manifest link, since this caption
@@ -71,8 +72,7 @@ promises a reader can open it.
 
 A real generation.
 
-> Below 0.85 it generates for real, files the asset and its provenance manifest
-> into B2, and the next identical request is free.
+> Below 0.85 it generates for real, files the asset and its provenance manifest into B2, and the next identical request is free.
 
 **Capture:** automated, behind `--spend`: it costs a real generation, about
 $0.04. The prompt is filed in the library by the run, so a second `--spend`
@@ -83,8 +83,7 @@ needs a fresh novel prompt (`--generate-prompt`, checked with
 
 The eval report as a reader meets it, rendered on GitHub.
 
-> 38 labeled pairs: nothing dangerous auto-reused, nothing equivalent
-> regenerated. The published numbers are pinned to this data in CI.
+> 38 labeled pairs: nothing dangerous auto-reused, nothing equivalent regenerated. The published numbers are pinned to this data in CI.
 
 **Capture:** automated. Opens `eval/report.md` on GitHub signed out, which is
 the page a judge would actually open to check the pinned numbers.

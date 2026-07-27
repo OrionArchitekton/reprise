@@ -130,7 +130,7 @@ export ELEVENLABS_API_KEY=...
 uvicorn "reprise.webapp:build_production_app" --factory --app-dir src --port 8000
 ```
 
-Then open http://localhost:8000. `pytest` runs the 93-test suite offline
+Then open http://localhost:8000. `pytest` runs the 95-test suite offline
 (a real Genblaze pipeline against an in-memory storage backend; only the
 provider network calls are mocked). CI checks that this number still matches
 what pytest collects, so it cannot quietly go stale. Live integration probes,

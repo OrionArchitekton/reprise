@@ -56,7 +56,7 @@ those records, not from an application counter that anyone can edit.
   producing model, and the retention actually in force. Those are coordinates
   you can re-derive from the bucket yourself.
 - FastAPI and server rendered Jinja for the app, deployed on Vercel, secrets in
-  Doppler, 93 tests, mypy strict, and a CI check that pins the numbers in the
+  Doppler, 95 tests, mypy strict, and a CI check that pins the numbers in the
   README to the eval report that produced them.
 
 **AI providers and models used**

@@ -373,3 +373,29 @@ def test_a_failed_scan_is_not_cached_so_recovery_is_immediate() -> None:
 
     assert entries, "a recovered backend must be re-read, not served from a failed cache"
     assert not lib.last_scan_unreadable, "readiness must clear as soon as reads work"
+
+
+def test_readiness_probe_reads_storage_even_when_the_scan_cache_is_warm() -> None:
+    """A readiness check answerable from memory is not a readiness check.
+
+    /readyz called scan(), which returns the cached projection, so once the
+    cache was warm the probe reported ready for the whole window no matter what
+    storage was doing. That is the exact shape of the Class B outage it was
+    added to catch: LIST kept working, GET stopped, and readiness stayed green.
+
+    probe() is also constant cost, one listing and one object, where scan() on
+    a cold instance reads the entire library.
+    """
+    backend = seeded_backend()
+    lib = B2Library(backend, prefix="reprise", scan_cache_sec=300, clock=lambda: 1000.0)
+    lib.scan()  # warm the cache while everything works
+    reads_before = backend.gets
+
+    lib.probe()
+    assert backend.gets > reads_before, "readiness must touch storage, not the cache"
+
+    backend.get = lambda key: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        StorageError("cap exceeded", error_code=StorageErrorCode.ACCESS_DENIED)
+    )
+    with pytest.raises(StorageError):
+        lib.probe()

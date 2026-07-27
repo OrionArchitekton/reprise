@@ -23,6 +23,8 @@ Design notes:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import uuid
@@ -90,6 +92,7 @@ class Ledger:
         prefix: str = "reprise",
         lock: ObjectLockConfig | None = None,
         retain_days: int | None = None,
+        snapshot_secret: bytes = b"",
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._backend = backend
@@ -98,6 +101,10 @@ class Ledger:
         self._retain_days = retain_days
         self._clock = clock or (lambda: datetime.now(UTC))
         self._seq = 0
+        # Signs the scoreboard snapshot. Empty disables snapshots entirely
+        # rather than writing one nobody can authenticate: an unsigned cache of
+        # Object Locked history is a number the ledger cannot back.
+        self._snapshot_secret = snapshot_secret
         self._snapshot_key = f"{self._prefix}/index/scoreboard.json"
 
     @property
@@ -344,10 +351,55 @@ class Ledger:
         head = rest.split("/", 1)[0]
         return head if len(head) == 8 and head.isdigit() else "00000000"
 
+    def _snapshot_signature(self, doc: dict[str, Any]) -> str:
+        """HMAC over the fields that carry meaning, in a fixed order.
+
+        Signing the serialized document would make the signature depend on key
+        order and whitespace, so a reserializing proxy would invalidate an
+        honest snapshot.
+        """
+        t = doc["totals"]
+        payload = "|".join(
+            [
+                str(doc.get("schema", "")),
+                str(doc.get("through_day", "")),
+                str(t.get("reuses", "")),
+                str(t.get("reviews", "")),
+                str(t.get("generates", "")),
+                str(t.get("accepts", "")),
+                f"{float(t.get('saved_usd', 0.0)):.6f}",
+            ]
+        )
+        return hmac.new(self._snapshot_secret, payload.encode(), hashlib.sha256).hexdigest()
+
     def _load_snapshot(self) -> tuple[str, Scoreboard]:
+        """The snapshot, but only if this deployment can prove it wrote it.
+
+        The snapshot short-circuits the ledger, so believing one is believing
+        a total without reading the records behind it. It is deliberately not
+        Object Locked (a cache that cannot be replaced is a liability), which
+        means anything able to write the bucket prefix can put a file here.
+        Two checks, and a failure of either recomputes from the ledger rather
+        than failing the request: an unverifiable cache costs reads, a believed
+        one costs the truth.
+        """
+        if not self._snapshot_secret:
+            return ("", Scoreboard())
         try:
             doc = json.loads(self._backend.get(self._snapshot_key))
             if int(doc.get("schema", 0)) != LEDGER_SCHEMA:
+                return ("", Scoreboard())
+            # A snapshot only ever covers days that can no longer change, so a
+            # through_day at or after today is impossible by construction and
+            # is the cheapest tell that the file was not written by this code.
+            through = str(doc.get("through_day", ""))
+            if not (len(through) == 8 and through.isdigit()):
+                return ("", Scoreboard())
+            if through >= self._clock().strftime("%Y%m%d"):
+                return ("", Scoreboard())
+            if not hmac.compare_digest(
+                str(doc.get("sig", "")), self._snapshot_signature(doc)
+            ):
                 return ("", Scoreboard())
             t = doc["totals"]
             return (
@@ -400,24 +452,27 @@ class Ledger:
 
         Never covers today: freezing a day still being written would stop the
         scoreboard moving. Written without a lock, because a cache that cannot
-        be replaced is a liability, not a guarantee.
+        be replaced is a liability, not a guarantee, and signed instead so that
+        being replaceable does not make it forgeable.
         """
+        if not self._snapshot_secret:
+            return
+        doc: dict[str, Any] = {
+            "schema": LEDGER_SCHEMA,
+            "through_day": through_day,
+            "totals": {
+                "reuses": board.reuses,
+                "reviews": board.reviews,
+                "generates": board.generates,
+                "accepts": board.accepts,
+                "saved_usd": board.saved_usd,
+            },
+        }
+        doc["sig"] = self._snapshot_signature(doc)
         try:
             self._backend.put(
                 self._snapshot_key,
-                json.dumps(
-                    {
-                        "schema": LEDGER_SCHEMA,
-                        "through_day": through_day,
-                        "totals": {
-                            "reuses": board.reuses,
-                            "reviews": board.reviews,
-                            "generates": board.generates,
-                            "accepts": board.accepts,
-                            "saved_usd": board.saved_usd,
-                        },
-                    }
-                ).encode(),
+                json.dumps(doc).encode(),
                 content_type="application/json",
             )
         except Exception as e:  # a cache write must never fail a read

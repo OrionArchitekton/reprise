@@ -1,9 +1,16 @@
 # Submission freeze, 2026-07-27
 
-**Code frozen at `2f738ac`** on `main`, CI green, working tree clean, local
-equals origin. Commits after that one touch only submission documents, not the
-application, so the running code a judge tests is the frozen code. Deadline
-2026-08-03 5:00pm EDT; target submit 2026-08-01.
+**Submitted 2026-07-27**: https://devpost.com/software/reprise-2s8tvi
+
+This document is a running record, not a sealed one. It said "code frozen at
+`2f738ac`, later commits are documentation only" and that went stale within
+hours, when `e788d1a` changed `src/reprise/library.py`. A freeze note that
+asserts a thing it cannot keep true is worse than no freeze note, so it now
+names the last runtime-changing commit and expects that to move.
+
+**Last runtime-changing commit: see `git log --oneline -- src/`.** Judging runs
+2026-08-05 to 08-11, and fixing a real defect before a judge meets it beats
+holding a frozen SHA.
 
 Everything below was run, not assumed. Where a line could not be verified it
 says so rather than being ticked.
@@ -12,14 +19,14 @@ says so rather than being ticked.
 
 | Check | Command | Result |
 |---|---|---|
-| Tests | `pytest` | 93 passed |
+| Tests | `pytest` | 95 passed |
 | Lint | `ruff check src tests tools` | clean |
 | Types | `mypy` (bare: 21 files, src AND tests) | clean |
 | Published numbers pinned to evidence | `tools/check_eval_freshness.py` | 38 pairs, false_auto=0, missed=0, count consistent across 5 docs |
 | Gallery captions fit Devpost | `tools/check_captions.py` | 6 captions, longest 137 of 140 |
 | No long dashes anywhere | repo-wide scan | 0 hits |
 | CI | GitHub Actions on `2f738ac` | success |
-| Clean-clone setup | fresh clone, README steps verbatim | 93 passed, ruff clean, mypy clean |
+| Clean-clone setup | fresh clone, README steps verbatim | 95 passed, ruff clean, mypy clean |
 | Live ladder | `tools/smoke.py https://reprise-murex.vercel.app` | 10 of 10 PASS at freeze. **FAILING again 2026-07-27 16:08 UTC**: the B2 Class B cap is exhausted a second time, see below |
 | Readiness | `GET /readyz` | 200 at freeze; 503 `storage: unreadable` at 16:08 UTC |
 | Repo | `gh repo view` | PUBLIC |
@@ -87,9 +94,14 @@ registered. Confirm you are joined to the hackathon before submit day.
 Verified from a signed-out fetch of the public project page, which is the view
 a judge gets: it reads "Submitted to" the hackathon (created and entered, not
 merely created), the video is embedded as youtube.com/embed/OhkccSow8hY, the
-live URL and repo are both linked, all ten Built-with tags are present, twelve
+live URL and repo are both linked, all ten Built-with tags are present, six
 gallery images uploaded, and the story text carries the models and the B2 and
 Genblaze explanation.
+
+(An earlier revision of this file said twelve. That came from counting
+`software_photos` occurrences in the page source, which appears twice per
+image. A probe that counts the wrong thing returns a number rather than an
+error, and a number reads as verified.)
 
 **One thing left, and it is small.** The two Genblaze issue URLs are not on the
 page as links. They appear only inside the Challenges prose as "(genblaze

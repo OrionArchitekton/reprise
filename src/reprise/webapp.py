@@ -313,14 +313,15 @@ def create_app(
         This probe does the cheapest real thing the app depends on: one listing
         and one object read. It is what a monitor should watch and what a deploy
         should gate on.
+
+        It deliberately does NOT call scan(). That answers from the per-process
+        cache, so a warm instance reported ready for the whole cache window even
+        while every object read was failing, which is the outage shape this
+        probe was added to detect.
         """
         try:
             ledger.spend_reservations_today(("reserve_generate",))
-            gateway.library.scan()
-            if gateway.library.last_scan_unreadable:
-                raise RuntimeError(
-                    f"{len(gateway.library.last_scan_unreadable)} manifest(s) unreadable"
-                )
+            gateway.library.probe()
         except Exception as e:
             log.warning("readiness check failed: %s", e)
             response.status_code = 503
@@ -505,7 +506,14 @@ def build_production_app() -> FastAPI:
     # from each write. A horizon computed here would be fixed at process boot
     # and would age with a warm serverless instance, eventually writing no real
     # protection while the UI still advertised an object-locked ledger.
-    ledger = Ledger(backend, prefix="reprise", retain_days=retain_days)
+    ledger = Ledger(
+        backend,
+        prefix="reprise",
+        retain_days=retain_days,
+        # Same derived secret the accept tokens use: the snapshot is a cache of
+        # Object Locked history, so the app has to be able to prove it wrote it.
+        snapshot_secret=_accept_secret(),
+    )
     gateway = Gateway(
         backend,
         GeminiEmbedder(),

@@ -81,9 +81,13 @@ the data.</p>
   assets/&lt;sha[:2]&gt;/&lt;sha[2:4]&gt;/&lt;sha&gt;.png
   manifests/&lt;run_id&gt;.json
   embeddings/&lt;prompt-sha&gt;.json
-  ledger/&lt;ts&gt;-&lt;seq&gt;-&lt;fp&gt;-&lt;nonce&gt;.json</pre>
-<p class="note">The savings scoreboard is recomputed from ledger objects on read. Nothing
-caches a number the ledger cannot back.</p>
+  ledger/&lt;YYYYMMDD&gt;/&lt;kind&gt;/&lt;ts&gt;-&lt;seq&gt;-&lt;fp&gt;-&lt;nonce&gt;.json</pre>
+<p class="note">The savings scoreboard is folded from ledger objects. Completed days are
+cached in a signed <span class="mono">index/scoreboard.json</span>; today is always recomputed.
+The cache is not Object Locked, so it is HMAC-signed and a snapshot this deployment cannot
+verify, or one claiming a day that has not finished, is discarded and the totals are recomputed
+from the records. A cache of Object-Locked history that could not be authenticated would be
+exactly a number the ledger cannot back.</p>
 </div>
 </div>
 
@@ -127,7 +131,7 @@ itself.</p>
 </ul>
 
 <h2>Verification</h2>
-<p class="mono">93 tests, ruff, mypy strict, an eval-freshness pin, and a long-dash scan, all in CI.
+<p class="mono">95 tests, ruff, mypy strict, an eval-freshness pin, and a long-dash scan, all in CI.
 Live probe outputs, including two probe corrections kept deliberately, are in
 docs/run-evidence.md.</p>
 <p>Live: reprise-murex.vercel.app &nbsp;&middot;&nbsp; Source: github.com/OrionArchitekton/reprise<br>

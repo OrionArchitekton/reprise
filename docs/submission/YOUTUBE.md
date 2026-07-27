@@ -11,22 +11,20 @@ Reprise: check what you already generated before you pay to generate it again (B
 
 ## Description
 
-Reprise sits in front of a Genblaze pipeline and answers one question per
-request: did we already generate this? Exact matches and near matches at or above
-0.97 similarity are served straight from Backblaze B2 and the money not
-re-spent is booked as a saving. Between 0.85 and 0.97 a human decides. Below
-0.85 it generates for real and files the result, with its provenance manifest,
-back into the library.
+**Paste as-is. Every paragraph is one line on purpose:** YouTube's description
+box strips newlines, and the wrapped version welded "per request" into
+"perrequest" and "auto reused" into "autoreused" on the published video.
 
-Every decision, reuse or spend, is written as an Object Lock record in B2 under
-GOVERNANCE retention, and the savings scoreboard is recomputed from those
-records rather than from an editable counter.
+Reprise sits in front of a Genblaze pipeline and answers one question per request: did we already generate this? Exact matches and near matches at or above 0.97 similarity are served straight from Backblaze B2 and the money not re-spent is booked as a saving. Between 0.85 and 0.97 a human decides. Below 0.85 it generates for real and files the result, with its provenance manifest, back into the library.
+
+Every decision, reuse or spend, is written as an Object Lock record in B2 under GOVERNANCE retention, and the savings scoreboard is recomputed from those records rather than from an editable counter.
 
 Built for the Backblaze Generative Media Hackathon 2026.
 
 Live demo: https://reprise-murex.vercel.app
 Source: https://github.com/OrionArchitekton/reprise
 Evaluation report: https://github.com/OrionArchitekton/reprise/blob/main/eval/report.md
+SDK feedback filed while building: https://github.com/backblaze-labs/genblaze/issues/205 and https://github.com/backblaze-labs/genblaze/issues/206
 
 AI providers and models used:
 - gemini-2.5-flash-image (image generation, through a custom Genblaze SyncProvider)
@@ -34,10 +32,7 @@ AI providers and models used:
 - gemini-embedding-001 (prompt embeddings for near-match scoring)
 - eleven_multilingual_v2 (narration in this video)
 
-Measured, not asserted: 38 labeled prompt pairs, 0 of 17 dangerous pairs auto
-reused, 0 of 10 non exact equivalents regenerated. The highest attribute-swap
-similarity measured 0.968, just under the auto-reuse line, which is why the
-human review band exists.
+Measured, not asserted: 38 labeled prompt pairs, 0 of 17 dangerous pairs auto reused, 0 of 10 non exact equivalents regenerated. The highest attribute-swap similarity measured 0.968, just under the auto-reuse line, which is why the human review band exists.
 
 ## Tags
 
