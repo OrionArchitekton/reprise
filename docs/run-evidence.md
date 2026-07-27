@@ -254,3 +254,37 @@ something new    -> generate best similarity 0.77 below review line 0.85
 Identical to the offline probe on all three scored prompts, which is the
 result the lower-bound argument predicted: no other library entry outscores
 the red-bicycle entry for a bicycle prompt.
+
+## 2026-07-27 01:05 UTC - demo video re-rendered and frame-checked
+
+First full render (158.6s) was discarded. It exposed three defects that are
+invisible in a script and only appear in the artifact:
+
+1. The review shot's accept fired about nine seconds before the narration that
+   explains accepting. A viewer watched the saving get booked while being told
+   a human still had to decide.
+2. The comparison rows were never on screen. Measured: at the shipped capture
+   CSS the `.compare` block ends at y=1675 in a 1080-tall viewport, and review
+   was the only shot with no scroll of its own.
+3. The generate shot consumed its own prompt. The render clicks "generate fresh
+   instead", which files the asset in B2 under that exact text, so the same
+   prompt scored 1.0000 on the next run and returned a REUSE with no review
+   card and no reject button. Confirmed live: the old prompt now matches run
+   d1fe7951 exactly.
+
+Second render, 158.3s (2:38, under the 3:00 rule cap), 7 segments. Frame
+checks against the artifact rather than the script:
+
+```
+t=75  review card, comparison rows and BOTH buttons in frame,
+      caption "is shown, not just scored: you decide"
+t=84  card border green (accepted), caption "signed capability token"
+t=131 GENERATE card: "Generated fresh via gemini-image ($0.04) and filed in
+      your library", reason "human rejected the library candidate"
+t=1   title card reads "Check what you already generated before you pay to
+      generate it again" (was "already own", pre-a3876dc copy)
+```
+
+New reject-shot prompt scored 0.8873 before the render, picked over a 0.8549
+candidate for floor margin. Scoreboard moved 46 to 48 decisions across the
+review and the forced generate, which is the two real decisions the shot makes.
