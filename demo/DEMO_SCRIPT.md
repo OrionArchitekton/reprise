@@ -9,6 +9,21 @@ the scoreboard really reads the ledger.
 Each shot runs in a fresh browser context, so every shot re-navigates and
 replays its own flow from the landing page.
 
+**Before every render, re-check the generate shot's prompt.** That shot types a
+near-duplicate, expects a REVIEW card, and clicks "generate fresh instead", so
+the prompt must score inside [0.85, 0.97). Rendering CONSUMES it: the click
+generates the asset and files it in B2 under that exact prompt, so the next run
+scores it 1.0000 and gets a REUSE with no review card and no reject button, and
+the shot silently records the wrong thing. Pick a fresh near-duplicate and
+check it first:
+
+```
+doppler run -p genblaze-hackathon -c prd -- .venv/bin/python tools/band_probe.py "<prompt>"
+```
+
+Prefer one nearer 0.89 than 0.86: the floor is a cliff, and the library gains
+an entry every render.
+
 ### SHOT problem
 - target: dashboard
 - url: /
@@ -40,8 +55,9 @@ replays its own flow from the landing page.
 - action: click selector="button[data-fill*='a crimson bicycle']"
 - action: click selector="#go"
 - action: wait ms=8000
-- action: highlight selector="#result"
-- action: wait ms=1500
+- action: scroll selector=".compare"
+- action: highlight selector=".compare"
+- action: wait ms=14000
 - action: click selector=".actions button.primary"
 - action: wait ms=6000
 - action: highlight selector="#result"
@@ -51,7 +67,7 @@ replays its own flow from the landing page.
 - narration: And what happens when the human says no. Same kind of near duplicate, but this time we reject it, and Reprise pays. It generates through a provider we wrote ourselves, because every Imagen tier now refuses newly created API keys while still advertising itself as available. So it carries a fallback chain, and the manifest records the model that actually produced the bytes. The asset lands in B2 addressed by its own sha256, so the next person who asks gets it free.
 - action: goto url="/"
 - action: wait ms=400
-- action: type selector="#prompt" text="a scarlet racing bicycle resting on a whitewashed brick wall, catalogue shot"
+- action: type selector="#prompt" text="a vermilion racing bicycle resting on a weathered grey brick wall, studio shot"
 - action: click selector="#go"
 - action: wait ms=9000
 - action: highlight selector=".actions"

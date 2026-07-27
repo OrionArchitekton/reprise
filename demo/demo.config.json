@@ -28,7 +28,7 @@
   },
   "brand": {
     "title": "Reprise",
-    "subtitle": "Check what you already own before you pay to generate",
+    "subtitle": "Check what you already generated before you pay to generate it again",
     "url": "reprise-murex.vercel.app",
     "accent": "#58a6ff"
   }
