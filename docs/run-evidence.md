@@ -229,3 +229,28 @@ GENERATE; the only way it changes is another entry scoring 0.97 or above, which
 would need a stored prompt closer to a scarlet racing bicycle than the red
 bicycle already in the library. Confirm against the live library before
 rendering anyway, since that is one cheap call once reads recover.
+
+## 2026-07-27 00:00 UTC - cap reset, live confirmation
+
+The Class B cap reset on schedule. `/readyz` returned 200 `storage: readable`,
+and `tools/smoke.py` passed all ten checks against the live deployment for the
+first time, including the asset fetch from B2. (It had never reached that rung:
+the tool was written during the outage, and its last check crashed on a PNG
+body, which only happens when everything else succeeds. Fixed in `50e05aa`.)
+
+Live scoreboard at reset: 16 reuses, 5 reviews, 9 generates, 2 accepts,
+$0.6966 saved across 30 decisions.
+
+The demo prompt bands, re-measured against the REAL library rather than the
+one-entry lower bound probed while reads were capped:
+
+```
+exact repeat     -> reuse    sim=1.0000  exact prompt match against run 9d6097da
+near-duplicate   -> review   sim=0.9348  review band [0.85, 0.97)
+reject shot      -> review   sim=0.8710  review band [0.85, 0.97)
+something new    -> generate best similarity 0.77 below review line 0.85
+```
+
+Identical to the offline probe on all three scored prompts, which is the
+result the lower-bound argument predicted: no other library entry outscores
+the red-bicycle entry for a bicycle prompt.
