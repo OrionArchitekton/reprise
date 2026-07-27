@@ -342,3 +342,34 @@ def test_the_memo_is_what_makes_a_warm_read_free() -> None:
 
     assert uncached_cost > 0  # this is what every request used to pay
     assert backend.gets == baseline
+
+
+def test_a_failed_scan_is_not_cached_so_recovery_is_immediate() -> None:
+    """Storage recovered, but the app kept serving the failure for 120s.
+
+    A projection built while objects were unreadable is known-incomplete, and
+    caching it means the next request reuses that incompleteness instead of
+    retrying. Worse, the cache-hit path returns before `last_scan_unreadable`
+    is reset, so the readiness probe keeps reporting degraded and the gateway
+    keeps refusing to decide, for the whole cache window AFTER B2 is fine
+    again. Observed in production 2026-07-27: reads recovered and the live
+    /readyz stayed 503.
+
+    Fail-closed is right while the read is failing. Staying closed after it
+    starts working is just an outage we are causing ourselves.
+    """
+    backend = seeded_backend()
+    lib = B2Library(backend, prefix="reprise", scan_cache_sec=300, clock=lambda: 1000.0)
+
+    real_get = backend.get
+    backend.get = lambda key: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        StorageError("cap exceeded", error_code=StorageErrorCode.ACCESS_DENIED)
+    )
+    assert lib.scan() == []
+    assert lib.last_scan_unreadable  # the failure was recorded
+
+    backend.get = real_get  # type: ignore[method-assign]
+    entries = lib.scan()
+
+    assert entries, "a recovered backend must be re-read, not served from a failed cache"
+    assert not lib.last_scan_unreadable, "readiness must clear as soon as reads work"

@@ -30,6 +30,67 @@ built it". The official rules require the text description to carry "a clearly
 defined list of the AI providers and models used", so that table is a
 submission requirement, not decoration.
 
+**Providers and models** (dedicated Devpost field: "List the AI providers and
+models used"). Every id below was read out of the source, not recalled:
+
+```
+Google Gemini
+- gemini-2.5-flash-image: image generation, called through a custom Genblaze
+  SyncProvider we wrote, because genblaze-google ships no provider for the
+  Gemini-native image models (filed as genblaze issue #205)
+- gemini-3.1-flash-image: first choice in the provider's fallback chain; the
+  manifest records whichever model actually produced the bytes
+- gemini-embedding-001: prompt embeddings, 3072 dims, used for near-match
+  similarity scoring
+
+ElevenLabs
+- eleven_flash_v2_5: audio generation in the app, via the stock Genblaze
+  ElevenLabsTTSProvider
+- eleven_multilingual_v2: narration in the demo video only, not in the product
+
+Storage is Backblaze B2 throughout, via genblaze-s3. Nothing else is called at
+runtime. The source also contains an OpenAIEmbedder (text-embedding-3-small)
+implementing the same contract for anyone deploying with an OpenAI key; the
+deployed app never constructs it.
+```
+
+**B2 and Genblaze usage** (dedicated Devpost field: "Explain how your app uses
+both"):
+
+```
+B2 is the system of record, not a dump. Five prefixes carry the whole product
+state, and the app holds no database beside them:
+
+- reprise/assets: generated media, content addressed (key_strategy
+  "content_addressable"), so identical bytes dedupe by construction
+- reprise/manifests: the Genblaze provenance manifest for every run. The
+  library is a PROJECTION of these, so there is nothing to drift out of sync
+  with what the bucket actually holds
+- reprise/embeddings: one sidecar per normalized prompt hash, so a prompt is
+  embedded once no matter how many runs reference it
+- reprise/ledger: every decision, written under Object Lock with GOVERNANCE
+  retention, partitioned by date and kind so a daily spend check is a listing
+  rather than a read of history
+- reprise/index: a folded scoreboard snapshot over completed days
+
+Reads are served as short-lived presigned URLs, and only for keys inside our
+own asset tree, because a shared bucket accumulates objects this app did not
+write.
+
+Genblaze does the generation and the provenance. Every generation runs as a
+Pipeline whose ObjectStorageSink(raise_on_failure=True) writes asset and
+manifest together, so a failed persist is an error rather than a ledger row
+claiming work that never landed. Manifest.verify_hash() is the admission gate:
+a manifest that no longer matches its own canonical hash never enters the
+library, which is what makes reuse safe to offer. Providers sit behind one
+interface per modality, including a custom SyncProvider we wrote for the
+Gemini-native image models. ObjectLockConfig sets the retention actually in
+force, and the proof receipt on every result quotes it back.
+
+Two findings from building on it went upstream as genblaze issues #205 and
+#206.
+```
+
 **Built with** (tags)
 
 ```
@@ -86,7 +147,7 @@ https://github.com/backblaze-labs/genblaze/issues/205 (genblaze-google ships no 
 | Criterion | Evidence |
 |---|---|
 | Real-world utility | The cost of regenerating what your own pipeline already made is the problem; the live demo books real savings against a real bucket. |
-| Production readiness | 92 tests, mypy strict, CI pinning published numbers to the eval data, reserve-before-spend budgets, capability-gated writes, correlation-id error handling. |
+| Production readiness | 93 tests, mypy strict, CI pinning published numbers to the eval data, reserve-before-spend budgets, capability-gated writes, correlation-id error handling. |
 | B2 storage and data orchestration | Content addressing, manifests, sidecars, Object Lock ledger, presigned serving with a prefix containment check. |
 | Use of Genblaze | Pipeline, ObjectStorageSink, manifest verification as an admission gate, a custom provider, and two upstream issues filed from real findings. |
 

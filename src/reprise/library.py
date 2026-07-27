@@ -114,7 +114,17 @@ class B2Library:
             token = page.next_token
             if token is None:
                 break
-        self._cached = (self._clock(), entries)
+        if not self.last_scan_unreadable:
+            # Only a COMPLETE projection is worth remembering. Caching one built
+            # while objects were unreadable makes the next request reuse that
+            # incompleteness instead of retrying, and because the cache-hit path
+            # returns before `last_scan_unreadable` is reset, readiness keeps
+            # reporting degraded and the gateway keeps refusing for the whole
+            # window AFTER storage recovers. Observed in production 2026-07-27:
+            # the B2 cap was raised, reads worked, and /readyz stayed 503.
+            # Refusing while the read is failing is correct; staying refused
+            # once it works is an outage of our own making.
+            self._cached = (self._clock(), entries)
         return entries
 
     # -- embeddings --------------------------------------------------------

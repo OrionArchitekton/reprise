@@ -12,14 +12,14 @@ says so rather than being ticked.
 
 | Check | Command | Result |
 |---|---|---|
-| Tests | `pytest` | 92 passed |
+| Tests | `pytest` | 93 passed |
 | Lint | `ruff check src tests tools` | clean |
 | Types | `mypy` (bare: 21 files, src AND tests) | clean |
 | Published numbers pinned to evidence | `tools/check_eval_freshness.py` | 38 pairs, false_auto=0, missed=0, count consistent across 5 docs |
 | Gallery captions fit Devpost | `tools/check_captions.py` | 6 captions, longest 137 of 140 |
 | No long dashes anywhere | repo-wide scan | 0 hits |
 | CI | GitHub Actions on `2f738ac` | success |
-| Clean-clone setup | fresh clone, README steps verbatim | 92 passed, ruff clean, mypy clean |
+| Clean-clone setup | fresh clone, README steps verbatim | 93 passed, ruff clean, mypy clean |
 | Live ladder | `tools/smoke.py https://reprise-murex.vercel.app` | 10 of 10 PASS at freeze. **FAILING again 2026-07-27 16:08 UTC**: the B2 Class B cap is exhausted a second time, see below |
 | Readiness | `GET /readyz` | 200 at freeze; 503 `storage: unreadable` at 16:08 UTC |
 | Repo | `gh repo view` | PUBLIC |
