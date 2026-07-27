@@ -25,6 +25,11 @@ Reprise checks whether your Genblaze library already holds an asset before payin
 heading (Inspiration, What it does, How we built it, Challenges we ran into,
 Accomplishments that we're proud of, What we learned, What's next).
 
+Do not drop the **AI providers and models used** table at the end of "How we
+built it". The official rules require the text description to carry "a clearly
+defined list of the AI providers and models used", so that table is a
+submission requirement, not decoration.
+
 **Built with** (tags)
 
 ```

@@ -59,6 +59,21 @@ those records, not from an application counter that anyone can edit.
   Doppler, 92 tests, mypy strict, and a CI check that pins the numbers in the
   README to the eval report that produced them.
 
+**AI providers and models used**
+
+| Model | Provider | What it does here |
+|---|---|---|
+| `gemini-2.5-flash-image` | Google Gemini, via a custom Genblaze `SyncProvider` we wrote | Image generation. Falls back down a chain and the manifest records the model that actually produced the bytes |
+| `gemini-3.1-flash-image` | Google Gemini, same provider | First choice in the fallback chain |
+| `gemini-embedding-001` | Google Gemini | Prompt embeddings (3072 dims) for near-match scoring |
+| `eleven_flash_v2_5` | ElevenLabs, via the stock Genblaze provider | Audio generation in the app |
+| `eleven_multilingual_v2` | ElevenLabs | Narration in the demo video only, not in the product |
+
+Storage is Backblaze B2 throughout, via `genblaze-s3`. Nothing else is called
+at runtime. Reading the source you will also find an `OpenAIEmbedder`
+(`text-embedding-3-small`): it implements the same contract for anyone
+deploying with an OpenAI key, and the deployed app does not construct it.
+
 ## Challenges we ran into
 
 **Every Imagen tier refuses newly created API keys.** The Google connector's

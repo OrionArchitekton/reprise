@@ -45,6 +45,35 @@ that describes them, the accept lands at t=84 on "signed capability token", the
 generate shot shows a real rejection and a real generation at t=131, and the
 title card carries the current copy.
 
+## Official rules, checked line by line
+
+Read from the rules page on 2026-07-27, not from memory. Dates confirmed:
+submission closes **2026-08-03 5:00pm ET**, judging 08-05 to 08-11, winners
+announced on or around 08-12.
+
+| Requirement | State |
+|---|---|
+| Working app using B2 Cloud Storage and Genblaze | yes, both load-bearing |
+| Functions as depicted in the video | video frame-checked against the live behaviour |
+| URL judges can access, test, evaluate | https://reprise-murex.vercel.app, no auth, so no test account needed |
+| Public GitHub repo with all source, assets, and **setup instructions in the README** | public; the README steps were BROKEN until `2f738ac` and are now verified from a clean clone |
+| Text description: features, how it uses B2 and Genblaze, **and a clearly defined list of AI providers and models** | the models table was missing from the Devpost text and is now in "How we built it" |
+| Video under 3 minutes | 2:38 |
+| Video shows the project functioning | five live shots against the real bucket, no slides |
+| Video publicly visible on YouTube, Vimeo or Youku | **operator action, not yet done** |
+| No third party trademarks or copyrighted music | audio bed is synthesized by the render pipeline, not licensed |
+| Optional: SDK feedback via Genblaze issues | genblaze #205 and #206, both open |
+| Project is new, created in the submission period | yes |
+
+Two of these were found failing during this check rather than passing: the
+README setup instructions and the models list. Both are explicit requirements,
+not preferences.
+
+**Registration.** The rules require completing the "Enter a Submission" page
+during the submission period, which presumes a registered Devpost entrant. An
+unauthenticated read of the site cannot tell whether this account is
+registered. Confirm you are joined to the hackathon before submit day.
+
 ## Operator actions remaining (both need a human)
 
 1. **Upload the video to YouTube.** Fields are in `YOUTUBE.md`. It must be
