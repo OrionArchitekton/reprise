@@ -288,3 +288,28 @@ t=1   title card reads "Check what you already generated before you pay to
 New reject-shot prompt scored 0.8873 before the render, picked over a 0.8549
 candidate for floor margin. Scoreboard moved 46 to 48 decisions across the
 review and the forced generate, which is the two real decisions the shot makes.
+
+## 2026-07-28 00:21 UTC - cold start, measured before and after the index
+
+Same method throughout: curl against the live deployment, first request timed
+after an idle period long enough for Vercel to reclaim the instance.
+
+```
+before the index   17.1s   (2026-07-27 ~16:00 UTC)
+before the index   12.4s   (2026-07-27 ~21:00 UTC, after a redeploy)
+after the index     1.005s (2026-07-28 00:21 UTC, 15 minutes idle)
+warm, either way    0.19s to 0.21s
+```
+
+The cause was storage, not Python cold boot, and that was established rather
+than assumed: a LOCAL server with Python already booted for 14 seconds still
+took 15.3s on its first request and 0.0025s on its second. Nothing about
+importing fastapi or genblaze explains a 15 second gap that disappears on the
+second call to the same process.
+
+Against the live bucket, the projection itself went from 4.19s to 0.13s, a
+32x cut, because a fresh instance now reads one signed object instead of one
+per manifest plus one per embedding sidecar.
+
+The residual second in the cold number is the part the index cannot touch:
+Python import and lambda start. That is the honest remaining floor.
