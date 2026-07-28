@@ -175,6 +175,27 @@ def _accept_secret() -> bytes:
     return hashlib.sha256(b"reprise-accept-v1|" + base.encode()).digest()
 
 
+def _derived_key(purpose: str) -> bytes:
+    """A per-purpose signing key from one configured root.
+
+    Two different objects are signed now, the scoreboard snapshot and the
+    library index, and reusing one key across both would let a signature
+    written for one be replayed as the other. Deriving per purpose costs
+    nothing and keeps that impossible, while still asking the operator for a
+    single secret.
+
+    Empty root means every signed cache is disabled rather than signed with a
+    guessable key: the app reads the objects it caches instead, which is slower
+    and always correct.
+    """
+    root = os.environ.get("REPRISE_SIGNING_SECRET") or os.environ.get(
+        "REPRISE_SCOREBOARD_SECRET", ""
+    )
+    if not root:
+        return b""
+    return hmac.new(root.encode(), purpose.encode(), hashlib.sha256).digest()
+
+
 def _scoreboard_secret() -> bytes:
     """The key that signs the scoreboard snapshot. Deliberately its OWN secret.
 
@@ -190,7 +211,7 @@ def _scoreboard_secret() -> bytes:
     never wrong. Failing closed here would take the scoreboard down over a
     missing performance key, which is the wrong trade for a cache.
     """
-    return os.environ.get("REPRISE_SCOREBOARD_SECRET", "").encode()
+    return _derived_key("scoreboard-snapshot-v1")
 
 
 def mint_accept_token(
@@ -539,6 +560,10 @@ def build_production_app() -> FastAPI:
             "audio": (ElevenLabsTTSProvider, "eleven_flash_v2_5"),
         },
         prefix="reprise",
+        # Publishes the projection so a cold instance reads one object instead
+        # of every manifest and sidecar, and so a peer notices what this one
+        # generated instead of paying to generate it again.
+        index_secret=_derived_key("library-index-v1"),
     )
     return create_app(
         gateway,

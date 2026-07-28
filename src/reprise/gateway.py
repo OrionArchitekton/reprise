@@ -15,11 +15,15 @@ Flow per request:
                  persist asset + provenance manifest through
                  ObjectStorageSink, and return the fresh entry.
 4. Every verdict is recorded in the object-locked ledger BEFORE the response
-   is returned; the scoreboard is derived from the ledger, never cached.
+   is returned; the scoreboard is folded from the ledger, and its cache is
+   signed so a total can never outrun the records behind it.
 
-Deliberate non-goals at this scale: the library rescan per request is O(bucket
-listing) and fine for a demo corpus; a production deployment would hold an
-index (the ParquetSink tables are the natural seed for one).
+The library is a signed index object in B2, republished whenever an instance
+changes the bucket, with the manifests remaining the authority behind it. A
+cold instance reads one object rather than every manifest and every embedding
+sidecar (measured against the live bucket: 4.19s to 0.13s), and a peer notices
+another instance's write instead of answering from a library that no longer
+matches the bucket and paying to generate what already exists.
 """
 
 from __future__ import annotations
@@ -73,6 +77,7 @@ class Gateway:
         providers: dict[str, ProviderSpec],
         *,
         prefix: str = "reprise",
+        index_secret: bytes = b"",
         # Short by default: a presigned URL embeds the access-key-id in its
         # X-Amz-Credential and is a bearer read capability for its whole life,
         # so it should outlive a page view and little else.
@@ -85,7 +90,7 @@ class Gateway:
         self._prefix = prefix
         self.prefix = prefix
         self._ttl = serve_url_ttl
-        self.library = B2Library(backend, prefix=prefix)
+        self.library = B2Library(backend, prefix=prefix, index_secret=index_secret)
 
     # -- the one entry point ----------------------------------------------
 
@@ -175,10 +180,12 @@ class Gateway:
         # must surface as an error (Genblaze itself seals a failure manifest),
         # not as a ledger row claiming work that never completed.
         entry = self._generate(request)
-        # The bucket just changed: a stale projection would make the asset we
-        # were paid to create invisible to the very next request, which is the
-        # one failure mode the reuse product cannot have.
-        self.library.invalidate()
+        # The bucket just changed, so republish the projection rather than only
+        # dropping the local copy. Invalidating here told THIS process and
+        # nobody else: a peer instance kept answering from a library without
+        # the asset we were just paid to create, and paid to create it again.
+        # Publishing moves the index stamp, which is how a peer finds out.
+        self.library.refresh_index(self._embedder)
         self._ledger.record(decision, produced=entry)
         url = self._serve_url(entry.storage_key)
         return GatewayResult(decision=decision, serve_url=url, new_entry=entry)

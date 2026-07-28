@@ -153,9 +153,12 @@ def test_decide_embeds_the_request_once_not_twice() -> None:
 
     client.post("/api/decide", json={"prompt": NEAR})
 
-    # One request embed + one library-sidecar embed. Three would mean the
-    # request was embedded twice (preview and handle both deciding).
-    assert embedder.calls == 2
+    # One embed: the request itself. The library entry's own vector is no
+    # longer paid for here, because publishing the index after a generate
+    # embeds and stores it at that point instead of leaving it for whichever
+    # request happens to need it next. Two would mean the request was embedded
+    # twice, preview and handle each deciding, which is what this guards.
+    assert embedder.calls == 1
 
 
 def test_accept_requires_a_valid_server_issued_token() -> None:

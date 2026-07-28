@@ -130,7 +130,7 @@ export ELEVENLABS_API_KEY=...
 uvicorn "reprise.webapp:build_production_app" --factory --app-dir src --port 8000
 ```
 
-Then open http://localhost:8000. `pytest` runs the 97-test suite offline
+Then open http://localhost:8000. `pytest` runs the 99-test suite offline
 (a real Genblaze pipeline against an in-memory storage backend; only the
 provider network calls are mocked). CI checks that this number still matches
 what pytest collects, so it cannot quietly go stale. Live integration probes,
@@ -168,8 +168,17 @@ which spend a few cents, are `tools/live_probe.py` and `tools/live_generate.py`.
 - If the library cannot be READ, Reprise refuses to decide (HTTP 503) rather
   than treating an empty projection as "you do not own this" and generating. A
   manifest that reads fine but does not parse still only skips itself.
-- A cold instance still pays one full library scan; a persisted library index
-  (Genblaze's `ParquetSink` tables are the natural seed) is the next step.
+- The library is a signed index object in B2 (`index/library.json`), carrying
+  the projected entries and their prompt vectors, republished whenever an
+  instance changes the bucket. A cold instance reads one object instead of
+  every manifest and sidecar: measured against the live bucket, 4.19s becomes
+  0.13s. Instances detect each other's writes through the index's listing
+  stamp, so a peer cannot answer from a library that no longer matches the
+  bucket and pay to generate something that already exists.
+- The index is a cache, never the authority. Missing, stale, corrupt or
+  unsigned, it falls back to reading the manifests, so it can cost reads but
+  not correctness. If the library cannot be read at all, Reprise still
+  refuses.
 
 ## License
 

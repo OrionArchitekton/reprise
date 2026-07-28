@@ -82,6 +82,7 @@ def make_gateway(backend: MemoryBackend, embedder: CountingEmbedder) -> Gateway:
         Ledger(backend, prefix="reprise", clock=fixed_clock),
         {"image": (mock_image_provider, "mock-image-v1")},
         prefix="reprise",
+        index_secret=b"test-index-key",
     )
 
 
@@ -177,9 +178,13 @@ def test_an_unreadable_library_never_becomes_a_reason_to_spend() -> None:
     gw.handle(Request(prompt="a red bicycle against a white wall", modality="image"))
     assets_before = sum(1 for k in backend.objects if k.startswith("reprise/assets/"))
 
-    # Every manifest read now fails, exactly as it did under the cap.
+    # Every read of the library now fails, exactly as it did under the cap. The
+    # index is refused alongside the manifests on purpose: it is a cache OF the
+    # manifests, so a cap that hides them hides it too, and "cannot see the
+    # library at all" is the condition this refusal exists for. When the index
+    # IS readable the gateway rightly serves from it, which is a separate test.
     def refuse(key: str) -> bytes:
-        if "/manifests/" in key:
+        if "/manifests/" in key or "/index/" in key:
             raise RuntimeError("Class B transaction cap exceeded")
         return MemoryBackend.get(backend, key)
 
@@ -255,3 +260,76 @@ def test_a_warm_gateway_answers_a_near_dupe_without_billed_reads() -> None:
 
     assert d.verdict is Verdict.REVIEW
     assert backend.gets == reads_before, "a warm request must read no objects"
+
+
+def test_a_peer_instance_does_not_pay_to_regenerate_what_this_one_just_made() -> None:
+    """The one outcome the product exists to prevent, across two instances.
+
+    The projection cache is per process and `invalidate()` clears only the
+    local one, so an instance that generates an asset tells nobody. A second
+    instance serving the very next request answers from a library that does
+    not contain it yet, and pays to make it again. Both external reviewers
+    reproduced this; it is a reuse product paying twice.
+
+    Two gateways over ONE backend is the whole point: that is two serverless
+    instances sharing a bucket.
+    """
+    backend = MemoryBackend()
+    first = make_gateway(backend, CountingEmbedder())
+    second = make_gateway(backend, CountingEmbedder())
+    prompt = "a red bicycle against a white wall"
+
+    # Both are warm and both have seen the empty library.
+    first.preview(Request(prompt="something else entirely", modality="image"))
+    second.preview(Request(prompt="another unrelated thing", modality="image"))
+
+    first.handle(Request(prompt=prompt, modality="image"))
+    assets_after_first = sum(
+        1 for k in backend.objects if k.startswith("reprise/assets/")
+    )
+
+    result = second.handle(Request(prompt=prompt, modality="image"))
+
+    assert result.decision.verdict is Verdict.REUSE, (
+        "the peer must see what the other instance just filed, not pay again"
+    )
+    assert (
+        sum(1 for k in backend.objects if k.startswith("reprise/assets/"))
+        == assets_after_first
+    ), "a second asset was generated for a prompt already in the library"
+
+
+def test_an_index_keeps_the_library_answerable_when_manifests_are_capped() -> None:
+    """The outage that took the demo down twice, survived rather than refused.
+
+    Under the Class B cap every manifest read failed, the projection came back
+    empty, and the app refused to decide. Refusing was the right answer to a
+    library it could not see. But the library is one signed object now, so a
+    cap that hides the manifests no longer hides the library: one read still
+    answers, and a reuse is served instead of a 503.
+
+    This is not the fail-closed test relaxing. When the index is unreadable too,
+    the gateway still refuses; that is asserted separately.
+    """
+    backend = MemoryBackend()
+    writer = make_gateway(backend, CountingEmbedder())
+    writer.handle(Request(prompt="a red bicycle against a white wall", modality="image"))
+    assets_before = sum(1 for k in backend.objects if k.startswith("reprise/assets/"))
+
+    def refuse_manifests(key: str) -> bytes:
+        if "/manifests/" in key:
+            raise RuntimeError("Class B transaction cap exceeded")
+        return MemoryBackend.get(backend, key)
+
+    backend.get = refuse_manifests  # type: ignore[method-assign]
+    cold = make_gateway(backend, CountingEmbedder())
+
+    result = cold.handle(
+        Request(prompt="a red bicycle against a white wall", modality="image")
+    )
+
+    assert result.decision.verdict is Verdict.REUSE
+    assert (
+        sum(1 for k in backend.objects if k.startswith("reprise/assets/"))
+        == assets_before
+    ), "nothing may be generated while the manifests are unreadable"
