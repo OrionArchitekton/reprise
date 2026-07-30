@@ -29,6 +29,7 @@ import hashlib
 import hmac
 import logging
 import os
+import random
 import time
 import uuid
 from collections.abc import Callable
@@ -45,6 +46,7 @@ from reprise.embed import prompt_fingerprint
 from reprise.gateway import Gateway, GatewayResult, LibraryUnavailable
 from reprise.ledger import Ledger, Scoreboard
 from reprise.model import Candidate, Decision, LibraryEntry, Request, Verdict
+from reprise.presets import NOVEL_PROMPTS, unseen_prompts
 
 log = logging.getLogger("reprise")
 
@@ -482,6 +484,45 @@ def create_app(
             "generation_available": gen < daily_generation_cap,
             "decisions_today": dec,
             "decision_cap": daily_decision_cap,
+        }
+
+    @app.get("/api/novel-prompt")
+    def novel_prompt() -> dict[str, Any]:
+        """A demo prompt the library does not already hold.
+
+        The "try something new" control has to still be true when a stranger
+        clicks it, and no browser can know that. The library is shared, so the
+        first visitor to run a prompt spends it for everyone after them, and a
+        pool shuffled client-side only lowers the odds of the button lying
+        rather than removing them.
+
+        Costs nothing billable. It compares prompt TEXT against the same
+        projection a decide already reads, so there is no embedding and no
+        generation. It deliberately does NOT go through the 60 second read
+        cache: `scan()` already answers from the in-process projection behind a
+        cheap index-stamp listing, and a stale answer here would hand back a
+        prompt that was spent seconds ago, which is the bug this endpoint is
+        for.
+
+        When the pool is exhausted it says so rather than pretending: the
+        caller gets `unseen: false` and a prompt that will honestly come back
+        as a reuse, which is the library working rather than the demo breaking.
+        """
+        try:
+            stored = [e.prompt for e in gateway.library.scan()]
+        except Exception as e:
+            # An unreadable library is already refused by /api/decide. Offering
+            # a prompt here regardless keeps this endpoint off the failure path
+            # instead of turning a read blip into a broken button.
+            log.warning("library unreadable while picking a demo prompt: %s", e)
+            stored = []
+        fresh = unseen_prompts(stored)
+        pick = random.choice(fresh) if fresh else random.choice(NOVEL_PROMPTS)
+        return {
+            "prompt": pick,
+            "unseen": bool(fresh),
+            "remaining": len(fresh),
+            "pool": len(NOVEL_PROMPTS),
         }
 
     @app.post("/api/accept")

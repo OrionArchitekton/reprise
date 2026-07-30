@@ -12,6 +12,19 @@ almost, a human decides. Only if no does it generate.
 
 Built for the Backblaze Generative Media Hackathon 2026.
 
+## Try it
+
+- **Live app:** https://reprise-murex.vercel.app (no account, no key, nothing
+  to install)
+- **Walkthrough video:** https://youtu.be/OhkccSow8hY (2:38)
+
+The three presets walk the three verdicts: an exact repeat, a near duplicate
+that goes to human review, and a prompt the library has not seen. The third one
+asks the server for a prompt that is not already stored, rather than shipping a
+fixed one that stops being new the moment the first visitor uses it. If every
+pool entry has been generated, it says so and answers with a reuse, which is the
+library working rather than the demo breaking.
+
 ## How a request flows
 
 ```
@@ -130,7 +143,7 @@ export ELEVENLABS_API_KEY=...
 uvicorn "reprise.webapp:build_production_app" --factory --app-dir src --port 8000
 ```
 
-Then open http://localhost:8000. `pytest` runs the 99-test suite offline
+Then open http://localhost:8000. `pytest` runs the 104-test suite offline
 (a real Genblaze pipeline against an in-memory storage backend; only the
 provider network calls are mocked). CI checks that this number still matches
 what pytest collects, so it cannot quietly go stale. Live integration probes,
@@ -153,6 +166,11 @@ which spend a few cents, are `tools/live_probe.py` and `tools/live_generate.py`.
   a cap by roughly the concurrency level before the reservations land.
 - A review shows you the candidate asset before asking you to judge it, and
   "generate fresh instead" really generates (it skips the library and pays).
+  A reuse does not offer it, on purpose: a reuse has already booked its saving
+  into the object-locked ledger by the time the card renders, and a forced
+  generate afterwards cannot unbook it, so the scoreboard would report both the
+  saving and the spend. A review books zero, which is what makes the override
+  sound there and only there.
 - Acceptance requires an HMAC capability token issued in the review response,
   and each offer can be accepted once: the token names its offer and the ledger
   is the record of which offers are spent. That check is still read-then-act,

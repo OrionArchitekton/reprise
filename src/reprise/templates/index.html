@@ -88,7 +88,7 @@
     <div class="presets">
       <button type="button" data-fill="a red bicycle leaning against a white brick wall, product photo">try an exact repeat</button>
       <button type="button" data-fill="a crimson bicycle propped against a white brick wall, product shot">try a near-duplicate</button>
-      <button type="button" data-fill="a lighthouse on a cliff in a thunderstorm, oil painting">try something new</button>
+      <button type="button" data-novel>try something new</button>
     </div>
   </form>
 
@@ -117,8 +117,32 @@
 const form = document.getElementById("ask");
 const result = document.getElementById("result");
 const go = document.getElementById("go");
+// The first two presets are fixed on purpose: they demonstrate a hit, so the
+// library has to already hold them. The third promises the opposite, and any
+// fixed prompt breaks it on first use: whoever clicks it first generates the
+// asset and files it in the library, so everyone after is told "already in
+// your library" by the one button that advertises a miss. That is what
+// happened to the lighthouse prompt this replaces.
+//
+// The pick is made server side because only the server can see what the
+// library holds. The library is shared, so a pool shuffled in this page would
+// still hand out prompts other visitors have already spent.
+async function fillNovelPrompt(box) {
+  try {
+    const r = await fetch("/api/novel-prompt");
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d && d.prompt) box.value = d.prompt;
+  } catch (e) {
+    // Leave the box alone. A failed pick must not clear what someone typed.
+  }
+}
 document.querySelectorAll(".presets button").forEach(b =>
-  b.addEventListener("click", () => { document.getElementById("prompt").value = b.dataset.fill; }));
+  b.addEventListener("click", () => {
+    const box = document.getElementById("prompt");
+    if (b.dataset.fill !== undefined) box.value = b.dataset.fill;
+    else fillNovelPrompt(box);
+  }));
 
 // Everything below builds DOM nodes and sets textContent. Nothing from the
 // API is ever concatenated into an HTML string: the prompt round-trips into
@@ -186,6 +210,13 @@ function card(d) {
     root.appendChild(actions);
   }
 
+  // No "generate fresh instead" on a REUSE, deliberately. A reuse has already
+  // booked its saving into the object-locked ledger by the time this card
+  // renders, and a forced generate afterwards cannot unbook it: the scoreboard
+  // would count both the saving and the spend, inflating the one number this
+  // product exists to report. A REVIEW books zero, which is why the override is
+  // sound there and not here. The demo's answer to a spent prompt is to stop
+  // handing out spent prompts (/api/novel-prompt), not to let the metric lie.
   if (d.proof) root.appendChild(receipt(d.proof));
   return root;
 }

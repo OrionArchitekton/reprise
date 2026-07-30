@@ -9,6 +9,7 @@ embedding path, and an unauthenticated accept that could forge savings.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from reprise.gateway import Gateway
 from reprise.ledger import Ledger
+from reprise.presets import NOVEL_PROMPTS
 from reprise.webapp import create_app
 from tests.test_gateway import CountingEmbedder, mock_image_provider
 from tests.test_library import MemoryBackend
@@ -67,6 +69,97 @@ def test_index_renders_scoreboard() -> None:
 def test_demo_mode_renders_static_card() -> None:
     client, *_ = build()
     assert "Already in your library" in client.get("/?demo=1").text
+
+
+def test_the_new_asset_preset_ships_no_fixed_prompt() -> None:
+    """The "try something new" control must not carry a hard coded prompt.
+
+    A fixed one is single use by construction. The first caller to run it
+    generates the asset and files it in the library, so every caller after that
+    is correctly told "already in your library" on the one control that
+    advertises the opposite. This already happened once, to a lighthouse prompt,
+    and to a visitor it reads as a broken or staged demo rather than as the
+    library working.
+    """
+    client, *_ = build()
+    novel = re.search(r"<button[^>]*>try something new</button>", client.get("/").text)
+    assert novel is not None, "the 'try something new' preset is gone"
+    assert "data-fill" not in novel.group(0), (
+        "the novel preset carries a fixed prompt again, which burns on first use"
+    )
+    assert "data-novel" in novel.group(0), (
+        "the preset lost the marker the click handler routes on, so it fills nothing"
+    )
+
+
+def test_the_prompt_pool_entries_are_distinct() -> None:
+    # A duplicate is a burned prompt waiting to happen: one generate would spend
+    # two slots and the pool would report more headroom than it has.
+    assert len(NOVEL_PROMPTS) == len(set(NOVEL_PROMPTS)) == 20
+
+
+def test_novel_prompt_never_offers_something_the_library_holds() -> None:
+    """The endpoint has to read the SHARED library, not a per-browser pool.
+
+    This is the finding a client-side pool cannot answer: the library is shared,
+    so a prompt one visitor generates is spent for every visitor after them. A
+    page that shuffles its own copy only lowers the odds of the button lying.
+    """
+    client, *_ = build()
+
+    first = client.get("/api/novel-prompt").json()
+    assert first["unseen"] is True and first["remaining"] == 20
+    assert first["prompt"] in NOVEL_PROMPTS
+
+    # Spend it exactly the way a visitor would, through the real decide path.
+    assert client.post("/api/decide", json={"prompt": first["prompt"]}).json()[
+        "verdict"
+    ] == "generate"
+
+    after = client.get("/api/novel-prompt").json()
+    assert after["remaining"] == 19
+    assert after["prompt"] != first["prompt"], "offered a prompt it just watched burn"
+    # And the spent one is gone from the offer set entirely, not merely unlucky.
+    assert all(
+        client.get("/api/novel-prompt").json()["prompt"] != first["prompt"]
+        for _ in range(25)
+    )
+
+
+def test_novel_prompt_admits_an_exhausted_pool_instead_of_pretending() -> None:
+    client, *_ = build(cap=40)
+    for prompt in NOVEL_PROMPTS:
+        # force=True so every prompt really lands in the library. A plain decide
+        # would leave some in the review band against the test embedder, and the
+        # pool would not actually be exhausted, which is what we want to assert.
+        client.post("/api/decide", json={"prompt": prompt, "force": True})
+
+    body = client.get("/api/novel-prompt").json()
+    # Still answers, so the button works, but says the honest thing: everything
+    # it can offer is now in the library. Silence here would look like the bug.
+    assert body["unseen"] is False
+    assert body["remaining"] == 0
+    assert body["prompt"] in NOVEL_PROMPTS
+
+
+def test_a_reuse_card_offers_no_forced_regenerate() -> None:
+    """Because a reuse has already booked its saving into the locked ledger.
+
+    A forced generate afterwards cannot unbook it, so the scoreboard would carry
+    both the saving and the spend and overstate the one number this product
+    exists to report. A REVIEW books zero, which is why the override is sound
+    there and only there.
+    """
+    body = client_index_script()
+    review_offer = 'd.verdict === "review" && d.accept_token'
+    assert review_offer in body, "the review override disappeared"
+    assert 'd.verdict === "reuse" && !d.accepted' not in body
+    assert body.count("Generate fresh instead") == 1
+
+
+def client_index_script() -> str:
+    client, *_ = build()
+    return str(client.get("/").text)
 
 
 def test_decide_generate_then_reuse_roundtrip() -> None:
