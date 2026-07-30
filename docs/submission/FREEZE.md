@@ -163,7 +163,7 @@ Two failure shapes are worth naming, because both have already happened here:
 
 Reproduced live before changing anything. The third preset returned:
 
-```
+```text
 verdict: reuse
 reason : exact prompt match against run 0fedbd11-f9da-4d14-83e5-cf444ee18b38
 saved  : 0.0387
@@ -208,16 +208,57 @@ Verified on branch `codex/reprise-demo-preset-20260730`, all offline:
 
 | Check | Command | Result |
 |---|---|---|
-| Tests | `pytest` | 100 passed (99 before, plus the regression) |
+| Tests | `pytest` | 104 passed (99 before, plus the regressions) |
 | Lint | `ruff check src tests tools` | clean |
 | Types | `mypy` | clean, 21 files |
-| Published numbers | `tools/check_eval_freshness.py` | 38 pairs, false_auto=0, missed=0, test count consistent across 5 docs at 100 |
+| Published numbers | `tools/check_eval_freshness.py` | 38 pairs, false_auto=0, missed=0, test count consistent across 5 docs at 104 |
 | Captions | `tools/check_captions.py` | 6 captions, longest 137 of 140 |
 | Long dashes | repo-wide scan | 0 hits |
 
-The test count moved from 99 to 100, so README, DEVPOST_STORY, SUBMISSION and
+The test count moved from 99 to 104, so README, DEVPOST_STORY, SUBMISSION and
 TECHNICAL_BRIEF were updated together. `check_eval_freshness.py` enforces that,
 which is why the number could not quietly drift.
+
+### Revised after review, same day
+
+The post-push review returned six findings and two changed the design. Both are
+recorded because the first version of this fix was wrong in a way worth keeping
+on the record.
+
+**A forced generate after a REUSE would have inflated the savings metric.** The
+first fix added "generate fresh instead" to the reuse card, reasoning that a
+caller who has seen the stored asset may still need a different one. By the time
+that card renders, `Gateway.handle()` has already written the reuse's
+`saved_usd` into the object-locked ledger, and the forced generate records a
+spend without compensating for it. The scoreboard would then report both, so the
+one number this product exists to publish would overstate itself on the judged
+surface. A REVIEW books zero saving, which is exactly why the override was
+already sound there and only there. Reverted, and the reason is now a comment
+next to the code rather than folklore.
+
+**A client-side pool cannot keep the promise either.** Each page shuffled its
+own copy of the 20 prompts, so it prevented repeats within one visit and knew
+nothing about what other visitors had already generated. After ten were spent,
+half of all first clicks would return REUSE, and eventually every one would: the
+same failure, arriving more slowly. The library is shared, so the choice belongs
+to the only party that can see it. `GET /api/novel-prompt` now picks a prompt
+the library does not already hold, costs no embedding and no generation, and
+reports `unseen: false` when the pool is exhausted rather than pretending.
+
+That endpoint deliberately does not use the 60 second read cache. `scan()`
+already answers from the in-process projection behind a cheap index-stamp
+listing, and a cached answer here would hand back a prompt spent seconds
+earlier, which is the bug it exists to prevent.
+
+Three smaller findings applied: the README no longer promises the third preset
+always generates, the regression test asserts the `data-novel` marker and an
+exact pool size rather than a floor, and the fenced block above declares its
+language.
+
+**Two review engines did not run.** Phases 2 and 3 (codex standard and codex
+adversarial) returned `usage_limit` and the grok leg errored, so the findings
+above came from the bot threads and the final sweep only. This is not a clean
+review, it is a partial one, and it is recorded as partial.
 
 ### Operator actions, deadline 2026-08-03 17:00 EDT
 
