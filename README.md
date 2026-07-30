@@ -12,6 +12,18 @@ almost, a human decides. Only if no does it generate.
 
 Built for the Backblaze Generative Media Hackathon 2026.
 
+## Try it
+
+- **Live app:** https://reprise-murex.vercel.app (no account, no key, nothing
+  to install)
+- **Walkthrough video:** https://youtu.be/OhkccSow8hY (2:38)
+
+The three presets on the page run the three verdicts in order: an exact repeat,
+a near duplicate that goes to human review, and a prompt the library has not
+seen, which really generates through Genblaze and files the result in B2. The
+third one draws from a rotating pool rather than a fixed prompt, because a fixed
+one stops being new the moment the first visitor uses it.
+
 ## How a request flows
 
 ```
@@ -130,7 +142,7 @@ export ELEVENLABS_API_KEY=...
 uvicorn "reprise.webapp:build_production_app" --factory --app-dir src --port 8000
 ```
 
-Then open http://localhost:8000. `pytest` runs the 99-test suite offline
+Then open http://localhost:8000. `pytest` runs the 100-test suite offline
 (a real Genblaze pipeline against an in-memory storage backend; only the
 provider network calls are mocked). CI checks that this number still matches
 what pytest collects, so it cannot quietly go stale. Live integration probes,
@@ -153,6 +165,11 @@ which spend a few cents, are `tools/live_probe.py` and `tools/live_generate.py`.
   a cap by roughly the concurrency level before the reservations land.
 - A review shows you the candidate asset before asking you to judge it, and
   "generate fresh instead" really generates (it skips the library and pays).
+  A reuse offers the same escape hatch, because a caller who has been shown
+  what they already own may still need a different asset, and a verdict that
+  cannot be overridden is a wall rather than an answer. The override is the
+  only path that spends without a library check, so it is a deliberate human
+  act and it is counted against the same daily generation cap.
 - Acceptance requires an HMAC capability token issued in the review response,
   and each offer can be accepted once: the token names its offer and the ledger
   is the record of which offers are spent. That check is still read-then-act,

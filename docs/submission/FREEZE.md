@@ -158,3 +158,77 @@ Two failure shapes are worth naming, because both have already happened here:
 - The similarity thresholds are measured on 38 labeled pairs, which is a small
   set. The eval report publishes the full per-category table including the
   ranges, so the reader can judge the sample rather than take a headline.
+
+## 2026-07-30: the "try something new" preset had burned, and is fixed
+
+Reproduced live before changing anything. The third preset returned:
+
+```
+verdict: reuse
+reason : exact prompt match against run 0fedbd11-f9da-4d14-83e5-cf444ee18b38
+saved  : 0.0387
+```
+
+This is the failure shape already named above under "a stale demo prompt", but
+it arrived through the demo itself rather than through a video re-render. The
+lighthouse prompt was fixed in the template, so the first visitor to click the
+button generated the asset and filed it in the library, and every visitor after
+that got a correct REUSE from the one control that advertises a miss. Control
+probes with unseen prompts returned GENERATE at similarity 0.73 and 0.81, so the
+engine was working and only the prompt was spent.
+
+Two things made it worth fixing rather than noting. A judge clicking the most
+prominent control is told the thing is already in the library, which reads as
+broken or staged. And it was the demo's only live-generation path, so it also
+removed the visible evidence for the Genblaze criterion.
+
+**The obvious fix does not work, and that is worth recording.** Appending a
+nonce to the prompt changes the text without changing the meaning, and the
+library matches on embedding similarity, not on text. A nonce still scores
+around 0.99, which is above the 0.97 auto-reuse line, so it would have served
+the same stored asset by a longer route and looked like the same bug.
+
+Changed:
+
+- The novel preset now draws from a rotating pool of 20 prompts that are far
+  apart in meaning, shuffled per page load and not repeated until the pool is
+  exhausted (`src/reprise/templates/index.html`).
+- A REUSE card now offers "generate fresh instead", which the REVIEW card
+  already had. The API always supported it; only the review path exposed it.
+  This is the structural half: no burned prompt can strand a visitor again,
+  whatever the pool does. It is not offered immediately after an accept, since
+  that caller just chose the stored asset.
+- A regression test asserts the preset carries no fixed prompt and that the
+  pool holds at least 12 distinct entries (`tests/test_webapp.py`).
+- `LICENSE` added. The README claimed MIT and the file was missing.
+- A "Try it" block at the top of the README with the live URL and the video.
+  Neither was linked from the repo, which is the first surface a judge reads.
+
+Verified on branch `codex/reprise-demo-preset-20260730`, all offline:
+
+| Check | Command | Result |
+|---|---|---|
+| Tests | `pytest` | 100 passed (99 before, plus the regression) |
+| Lint | `ruff check src tests tools` | clean |
+| Types | `mypy` | clean, 21 files |
+| Published numbers | `tools/check_eval_freshness.py` | 38 pairs, false_auto=0, missed=0, test count consistent across 5 docs at 100 |
+| Captions | `tools/check_captions.py` | 6 captions, longest 137 of 140 |
+| Long dashes | repo-wide scan | 0 hits |
+
+The test count moved from 99 to 100, so README, DEVPOST_STORY, SUBMISSION and
+TECHNICAL_BRIEF were updated together. `check_eval_freshness.py` enforces that,
+which is why the number could not quietly drift.
+
+### Operator actions, deadline 2026-08-03 17:00 EDT
+
+Devpost re-challenges reCAPTCHA on automated edits, so these are manual:
+
+1. **The live Devpost page says "95 tests".** It is wrong in both directions
+   now: the repo said 99 at submission and says 100 today. Update the story
+   text from `docs/submission/DEVPOST_STORY.md`.
+2. **TECHNICAL_BRIEF.pdf** on Devpost still reads 99. Regenerate from the HTML
+   and re-upload, or leave it and accept a one-digit mismatch against the repo.
+3. **Raise the B2 caps** for the 08-05 to 08-11 judging window. The Class B cap
+   has already been exhausted twice under far lighter load than judging.
+4. **Paste the Genblaze issue links** (#205, #206) into "Additional info", still
+   outstanding from the 07-27 list above.

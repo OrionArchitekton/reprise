@@ -88,7 +88,7 @@
     <div class="presets">
       <button type="button" data-fill="a red bicycle leaning against a white brick wall, product photo">try an exact repeat</button>
       <button type="button" data-fill="a crimson bicycle propped against a white brick wall, product shot">try a near-duplicate</button>
-      <button type="button" data-fill="a lighthouse on a cliff in a thunderstorm, oil painting">try something new</button>
+      <button type="button" data-novel>try something new</button>
     </div>
   </form>
 
@@ -117,8 +117,60 @@
 const form = document.getElementById("ask");
 const result = document.getElementById("result");
 const go = document.getElementById("go");
+// The first two presets are fixed on purpose: they demonstrate a hit, so they
+// need the library to already hold them. The third promises the opposite, and
+// any fixed prompt breaks it on first use. Whoever clicks it first generates
+// the asset and files it in the library, so everyone after is told "already in
+// your library" - the system working exactly as designed, on the one button
+// that advertises a miss. That is what happened to the lighthouse prompt this
+// pool replaces.
+//
+// The obvious repair does not work. Appending a nonce ("...#4821") changes the
+// text and not the meaning, and the library matches on embedding similarity
+// rather than on text: a nonce still scores around 0.99, above the 0.97
+// auto-reuse line, so it would serve the same stored asset by a longer route.
+// Only semantic distance produces a real generate, so rotate over prompts that
+// are far apart in meaning.
+const NOVEL_PROMPTS = [
+  "a brass telescope on a wooden observatory floor, warm lamplight, film photograph",
+  "a bowl of ramen with soft egg and scallions, overhead shot, food photography",
+  "an origami crane folded from sheet music, macro, soft studio light",
+  "a desert bus stop at noon, heat haze, kodachrome",
+  "a kelp forest seen from below, sunbeams through water, wide angle",
+  "a vinyl record spinning on a turntable, shallow depth of field, night",
+  "a snow leopard on a rock ledge, overcast mountain light, wildlife photograph",
+  "a stack of secondhand books beside a cold coffee, morning window light",
+  "an empty subway platform at 2am, long exposure",
+  "a hand painted fishing boat on a shingle beach, watercolor",
+  "a greenhouse full of ferns after rain, condensation on the glass",
+  "an espresso machine with steam and copper piping, industrial product shot",
+  "a wheat field bending under a storm front, oil painting",
+  "a chess endgame on a marble board, raking side light, still life",
+  "a neon laundromat sign reflected in a wet street, cyberpunk illustration",
+  "a hot air balloon over terraced rice fields at sunrise",
+  "a violin workshop bench with wood shavings and hand tools, natural light",
+  "a lynx track in fresh snow, close up, blue hour",
+  "a paper map folded open on a car dashboard, road trip, 35mm",
+  "a cathedral of ice inside a glacier, headlamp lighting",
+];
+let novelPool = [];
+function nextNovelPrompt() {
+  // Refill only when empty, so nothing repeats until every other prompt has
+  // been offered. Math.random is picking demo copy, nothing security bearing.
+  if (!novelPool.length) {
+    novelPool = NOVEL_PROMPTS.slice();
+    for (let i = novelPool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [novelPool[i], novelPool[j]] = [novelPool[j], novelPool[i]];
+    }
+  }
+  return novelPool.pop();
+}
 document.querySelectorAll(".presets button").forEach(b =>
-  b.addEventListener("click", () => { document.getElementById("prompt").value = b.dataset.fill; }));
+  b.addEventListener("click", () => {
+    document.getElementById("prompt").value =
+      b.dataset.fill !== undefined ? b.dataset.fill : nextNovelPrompt();
+  }));
 
 // Everything below builds DOM nodes and sets textContent. Nothing from the
 // API is ever concatenated into an HTML string: the prompt round-trips into
@@ -182,6 +234,22 @@ function card(d) {
     const fresh = el("button", null, "Generate fresh instead");
     fresh.addEventListener("click", () => submit(d.prompt, d.modality, true));
     actions.appendChild(use);
+    actions.appendChild(fresh);
+    root.appendChild(actions);
+  }
+
+  // A reuse used to be a dead end in the UI: the card said "already in your
+  // library" and offered nothing else, so a caller who had seen the stored
+  // asset and still needed a different one had no way forward. The API has
+  // always supported that (force), only the review card exposed it. Offering it
+  // here costs nothing to the thesis, because the human is choosing to spend
+  // after being shown what they already own, which is the whole point. It also
+  // means a demo prompt someone has already run cannot strand the next visitor.
+  // Not offered straight after an accept: that caller just chose the stored one.
+  if (d.verdict === "reuse" && !d.accepted) {
+    const actions = el("div", "actions");
+    const fresh = el("button", null, "Generate fresh instead");
+    fresh.addEventListener("click", () => submit(d.prompt, d.modality, true));
     actions.appendChild(fresh);
     root.appendChild(actions);
   }
@@ -275,7 +343,7 @@ async function accept(prompt, modality, asset_id, token) {
     body: JSON.stringify({prompt, modality, asset_id, token}),
   });
   const data = await resp.json();
-  if (resp.ok) { showCard(card({...data, verdict: "reuse"})); refreshBoard(); }
+  if (resp.ok) { showCard(card({...data, verdict: "reuse", accepted: true})); refreshBoard(); }
   else showError(typeof data.detail === "string" ? data.detail : "accept failed");
 }
 </script>

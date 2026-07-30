@@ -9,6 +9,7 @@ embedding path, and an unauthenticated accept that could forge savings.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -67,6 +68,34 @@ def test_index_renders_scoreboard() -> None:
 def test_demo_mode_renders_static_card() -> None:
     client, *_ = build()
     assert "Already in your library" in client.get("/?demo=1").text
+
+
+def test_the_new_asset_preset_ships_no_fixed_prompt() -> None:
+    """The "try something new" control must not carry a hard coded prompt.
+
+    A fixed one is single use by construction. The first caller to run it
+    generates the asset and files it in the library, so every caller after that
+    is correctly told "already in your library" on the one control that
+    advertises the opposite. This already happened once, to a lighthouse prompt,
+    and to a visitor it reads as a broken or staged demo rather than as the
+    library working.
+    """
+    client, *_ = build()
+    body = client.get("/").text
+
+    novel = re.search(r"<button[^>]*>try something new</button>", body)
+    assert novel is not None, "the 'try something new' preset is gone"
+    assert "data-fill" not in novel.group(0), (
+        "the novel preset carries a fixed prompt again, which burns on first use"
+    )
+
+    pool = re.search(r"const NOVEL_PROMPTS = \[(.*?)\];", body, re.S)
+    assert pool is not None, "the novel preset has no prompt pool to draw from"
+    prompts = re.findall(r'"([^"]+)"', pool.group(1))
+    # Distinct entries only: a duplicate is a burned prompt waiting to happen,
+    # and the pool has to outlast a judging window, not a single visit.
+    assert len(prompts) == len(set(prompts))
+    assert len(prompts) >= 12
 
 
 def test_decide_generate_then_reuse_roundtrip() -> None:
