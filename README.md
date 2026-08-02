@@ -126,6 +126,16 @@ measured in minutes rather than seconds.
   answers 404, the provider walks its chain and the manifest records the model
   that actually produced the bytes.
 
+**Backblaze shipped both of our findings.** A Genblaze maintainer implemented
+the Gemini-native image provider and the Imagen entitlement probe in
+[PR #220](https://github.com/backblaze-labs/genblaze/pull/220), merged
+2026-07-28, closing
+[#205](https://github.com/backblaze-labs/genblaze/issues/205) and
+[#206](https://github.com/backblaze-labs/genblaze/issues/206). We reported the
+findings and supplied the reproductions; the implementation is theirs. The
+custom provider here is the workaround that got us unblocked before that
+landed, and the SDK now covers the same ground.
+
 AI providers and models used: `gemini-2.5-flash-image` (image generation),
 `eleven_flash_v2_5` (ElevenLabs TTS), `gemini-embedding-001` (prompt
 embeddings for near-match scoring).
@@ -139,6 +149,13 @@ pip install -r requirements-dev.lock   # pytest, ruff, mypy: needed to run the s
 export B2_KEY_ID=... B2_APP_KEY=... B2_BUCKET=... B2_REGION=...   # scoped key; bucket created WITH Object Lock
 export GEMINI_API_KEY=...
 export ELEVENLABS_API_KEY=...
+
+# Signs the derived caches (library index, scoreboard snapshot). Its own secret
+# on purpose: the thing these signatures defend against is someone who can WRITE
+# the bucket, so deriving the key from B2_APP_KEY would hand them the pen. Unset
+# is safe but slow -- nothing is signed, so nothing is trusted, and every
+# instance rebuilds from the manifests and the ledger instead.
+export REPRISE_SIGNING_SECRET=$(openssl rand -base64 48)
 
 uvicorn "reprise.webapp:build_production_app" --factory --app-dir src --port 8000
 ```
@@ -197,6 +214,20 @@ which spend a few cents, are `tools/live_probe.py` and `tools/live_generate.py`.
   unsigned, it falls back to reading the manifests, so it can cost reads but
   not correctness. If the library cannot be read at all, Reprise still
   refuses.
+- **Two identical requests arriving at the same moment can each pay.** The
+  library check is read-then-act: both see an empty library, both generate.
+  Reuse is correct once an asset is filed, and the ledger records both spends
+  honestly, but the central promise is a steady-state property here and not a
+  concurrent one. An atomic per-fingerprint generation claim is the fix and is
+  not built.
+- **Object Lock protects records from deletion and modification, not from
+  addition.** GOVERNANCE retention means an existing decision record cannot be
+  altered or destroyed while it holds. It does not authenticate who wrote one,
+  so anyone holding B2 write credentials can APPEND a row, and the scoreboard
+  folds what it finds. The signed caches do not change that: they stop a forged
+  *cache*, and the records underneath are only as trustworthy as the bucket
+  credential. Signing rows at write time is the fix, and existing rows cannot
+  be re-signed in place precisely because the lock is doing its job.
 
 ## License
 

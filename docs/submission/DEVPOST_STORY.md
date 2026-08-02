@@ -85,6 +85,13 @@ and the run died at call time. We wrote our own `SyncProvider` against
 `generateContent`, which returns inline image bytes, and filed both findings
 upstream (genblaze issues #205 and #206).
 
+**Backblaze shipped both.** A Genblaze maintainer implemented the Gemini-native
+image provider and the Imagen entitlement probe in PR #220, which merged on
+2026-07-28 and closed both issues. We reported the findings and supplied the
+reproductions; the upstream fix is theirs, not ours. The workaround we built to
+get unblocked is now redundant with the SDK itself, which is the outcome a
+feedback report is supposed to have.
+
 **A spend cap that counted the wrong thing.** Our first daily cap counted ledger
 records written after a generation completed. Under any concurrency the cap
 failed open: the spend happened, then the record it was counted by. We rewrote it
@@ -153,7 +160,14 @@ while retention holds.
 
 ## What's next for Reprise
 
-- Finish the index. Ledger reads are already bounded (day partitions plus a
+- Harden multi-writer publication of the library index: versioned or
+  compare-and-swap writes plus a manifest-set watermark, so two instances
+  publishing at once cannot lose an update. The index itself shipped; what is
+  left is making concurrent publication safe rather than last-write-wins.
+- Make generation claims atomic per prompt fingerprint. Two identical requests
+  arriving together can still each pay, because the library check is
+  read-then-act. Bounding that is the honest next step, not a solved property.
+- Ledger reads are already bounded (day partitions plus a
   snapshot of completed days), but a cold instance still scans the library once;
   Genblaze's `ParquetSink` tables are the natural seed for persisting it.
 - Add an image embedding signal alongside the prompt signal, so the review band

@@ -126,7 +126,12 @@ which are what the 10x Feedback Prize is judged on and stack with an overall
 prize:
 
 ```
-SDK feedback filed during the build:
+SDK feedback filed during the build, both of which Backblaze has now shipped.
+A Genblaze maintainer implemented them in PR #220
+(https://github.com/backblaze-labs/genblaze/pull/220), merged 2026-07-28,
+closing both issues. We reported and reproduced; the upstream implementation is
+theirs.
+
 https://github.com/backblaze-labs/genblaze/issues/206 (the Google family probe reports LIVE for imagen-4.0 slugs that :predict rejects as unavailable to new users, so preflight passes and the run dies at call time)
 https://github.com/backblaze-labs/genblaze/issues/205 (genblaze-google ships no provider for the Gemini-native image models, which are the only image models a newly created key can call)
 ```

@@ -71,7 +71,8 @@ Stage One is pass/fail: must reasonably fit the theme and apply B2 + Genblaze.
   model that actually produced the bytes.
 - Object Lock retention is computed at each write, not at process start.
 - What is DEMOED vs DESIGNED: single-tenant demo; per-request bucket rescan
-  (an index is future work, ParquetSink named as the seed); the cap and
+  (the signed index/library.json shipped 2026-07-27; what remains is safe
+  concurrent publication, not the index itself); the cap and
   replay checks are read-then-act, so a concurrent burst can overshoot by
   roughly the concurrency level (disclosed in the README).
 - Everything in docs/run-evidence.md is a pasted probe output, never
