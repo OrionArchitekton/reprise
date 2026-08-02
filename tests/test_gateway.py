@@ -333,3 +333,31 @@ def test_an_index_keeps_the_library_answerable_when_manifests_are_capped() -> No
         sum(1 for k in backend.objects if k.startswith("reprise/assets/"))
         == assets_before
     ), "nothing may be generated while the manifests are unreadable"
+
+
+def test_a_paid_generation_is_recorded_even_if_publishing_the_index_fails() -> None:
+    """The spend happened. Losing its record is not an option.
+
+    Publishing the index was added between the generation and the ledger write,
+    which put a failable operation in the gap: it rescans the bucket and embeds
+    the new prompt, so a B2 blip or an embedding outage would raise and the
+    ledger row for money already spent would never be written. The asset and
+    its manifest would persist with nothing accounting for them, and the
+    scoreboard would under-report a real cost.
+
+    The record is the durable outcome; the index is a cache of a projection.
+    Order and failure handling have to say so.
+    """
+    backend = MemoryBackend()
+    gw = make_gateway(backend, CountingEmbedder())
+    ledger = Ledger(backend, prefix="reprise", clock=fixed_clock)
+
+    def explode(embedder: object) -> None:
+        raise RuntimeError("B2 unavailable while republishing the index")
+
+    gw.library.refresh_index = explode  # type: ignore[method-assign]
+
+    gw.handle(Request(prompt="a red bicycle against a white wall", modality="image"))
+
+    board = ledger.summarize()
+    assert board.generates == 1, "a paid generation must be on the ledger regardless"

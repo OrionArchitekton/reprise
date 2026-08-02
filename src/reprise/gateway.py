@@ -28,6 +28,7 @@ matches the bucket and paying to generate what already exists.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
@@ -47,6 +48,8 @@ from reprise.nearmatch import classify, score_candidates
 # for. A factory (not an instance) because providers own network clients and
 # the pipeline closes what it is handed; each generate() gets a fresh one.
 ProviderSpec = tuple[Callable[[], BaseProvider], str]
+
+log = logging.getLogger(__name__)
 
 
 class LibraryUnavailable(RuntimeError):
@@ -180,13 +183,24 @@ class Gateway:
         # must surface as an error (Genblaze itself seals a failure manifest),
         # not as a ledger row claiming work that never completed.
         entry = self._generate(request)
-        # The bucket just changed, so republish the projection rather than only
-        # dropping the local copy. Invalidating here told THIS process and
-        # nobody else: a peer instance kept answering from a library without
-        # the asset we were just paid to create, and paid to create it again.
-        # Publishing moves the index stamp, which is how a peer finds out.
-        self.library.refresh_index(self._embedder)
+        # Record the spend BEFORE republishing. Publishing rescans the bucket
+        # and embeds the new prompt, so it can fail on a storage blip or an
+        # embedding outage, and it used to sit in the gap between the money
+        # leaving and the row that accounts for it: the asset and its manifest
+        # would persist with nothing on the ledger explaining them, and the
+        # scoreboard would under-report a real cost. The record is the durable
+        # outcome; the index is a cache of a projection.
         self._ledger.record(decision, produced=entry)
+        # Republish so peers see it, rather than only dropping the local copy.
+        # Invalidating told THIS process and nobody else, and a peer instance
+        # kept answering from a library without the asset we were just paid to
+        # create, and paid to create it again. Best effort by construction: a
+        # stale index costs a peer some reads, and the next scan republishes it.
+        try:
+            self.library.refresh_index(self._embedder)
+        except Exception as e:
+            log.warning("library index refresh failed after generate: %s", e)
+            self.library.invalidate()
         url = self._serve_url(entry.storage_key)
         return GatewayResult(decision=decision, serve_url=url, new_entry=entry)
 
