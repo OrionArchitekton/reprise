@@ -335,6 +335,31 @@ Also stale above: line 74 lists genblaze #205 and #206 as "both open". The live 
 states a Genblaze maintainer landed both in PR #220, merged 2026-07-28, closing them.
 That is a better story beat than this checklist knew about.
 
+### The cap analysis earlier in this file is also stale
+
+The "two failure shapes" section argues that judging read cost scales with judges
+times library size, because each cold instance pays a full library scan, and names
+the persisted index as the structural fix not yet taken. **That fix shipped.**
+`22f0c0a` (2026-07-27, "Publish the library as a signed index, so instances stop
+working alone") added the three-tier `Library.scan()` at `src/reprise/library.py:121`,
+and it is wired into production at `src/reprise/webapp.py:607`.
+
+Cold-start cost per instance is now:
+
+| Tier | Cost | When it applies |
+|---|---|---|
+| 1 | one LISTING of the index key (Class C, the cheap class) | stamp unchanged, nothing is read at all |
+| 2 | one GET of the signed index (Class B) | cold instance, index present and trusted |
+| 3 | one listing plus a read per manifest and per sidecar (the old 2N+1) | no index, or it is stale, corrupt or unsigned |
+
+A cold instance pays about two round trips, not about 2N+1. The docstring records the
+measured difference as 15.3 seconds against 2 milliseconds warm. Tier 3 still exists as
+the fallback, so a judging spike degrades to cost, never to incorrectness.
+
+**What this means for the cap decision:** raising the cap is still worth doing as cheap
+insurance, but it is no longer the load-bearing mitigation it was on 07-27, and the
+"judges times library size" figure should not be used to size the raise.
+
 ### What actually remains
 
 1. **Raise the B2 caps** for the judging window. This is the highest real risk in the
