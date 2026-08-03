@@ -311,3 +311,36 @@ automated edits, and B2 caps live in the Backblaze console):
    used a little Class B quota; the Class B cap has been exhausted twice before
    under lighter load than judging will apply.
 4. Paste the Genblaze issue links (#205, #206) into "Additional info".
+
+## Live re-probe, 2026-08-03 04:20 UTC (00:20 EDT, 16h40m before the edit window closes)
+
+The four-item list above was authored from local state and had gone stale against
+the live submission. The published project page was re-probed directly. Two of the
+four are already satisfied.
+
+| # | Action as written above | Live state | Verdict |
+|---|---|---|---|
+| 1 | Story says 95, change to 105 | Page reads "... Doppler, 105 tests, mypy strict, and a CI check that pins the numbers in the README to the eval report that produced them", matching `DEVPOST_STORY.md:59` verbatim | **DONE, no edit needed** |
+| 2 | `TECHNICAL_BRIEF.pdf` still reads 99 | The PDF on disk reads "105 tests, ruff, mypy strict, an eval-freshness pin, and a long-dash scan, all in CI" (`pdftotext`), rendered 2026-08-01 20:29 from `TECHNICAL_BRIEF.html:134` | **Local artifact is current.** Open question is only whether the copy attached to Devpost is this render |
+| 3 | Raise B2 caps for 08-05 to 08-11 | Not checkable from here, the Caps page is console-only | **OUTSTANDING, and the only hard one** |
+| 4 | Paste #205 / #206 into "Additional info" | Both literals appear on the live page inside "Challenges we ran into". The page has no "Additional info" section at all | **Substantively covered as prose**, links-in-a-field is cosmetic |
+
+Method note: the page was read through an independent fetch, not from these local
+files. The quoted sentence reproduces `DEVPOST_STORY.md:59` word for word, which is
+what makes it a page read rather than an echo of local state. Both reads fall inside
+one 15 minute fetch cache, so they describe the page as of roughly 04:16 to 04:20
+UTC, not two samples separated in time.
+
+Also stale above: line 74 lists genblaze #205 and #206 as "both open". The live page
+states a Genblaze maintainer landed both in PR #220, merged 2026-07-28, closing them.
+That is a better story beat than this checklist knew about.
+
+### What actually remains
+
+1. **Raise the B2 caps** for the judging window. This is the highest real risk in the
+   submission: the Class B cap has been exhausted twice already under lighter load
+   than judging will apply, and a cold serverless instance pays a full library scan,
+   so read cost scales with the number of judges.
+2. Confirm the `TECHNICAL_BRIEF.pdf` attached to Devpost is the 2026-08-01 render.
+   Re-upload only if it is not.
+3. Optional, cosmetic: add #205 and #206 as clickable links.
