@@ -264,12 +264,50 @@ review, it is a partial one, and it is recorded as partial.
 
 Devpost re-challenges reCAPTCHA on automated edits, so these are manual:
 
-1. **The live Devpost page says "95 tests".** It is wrong in both directions
-   now: the repo said 99 at submission and says 100 today. Update the story
-   text from `docs/submission/DEVPOST_STORY.md`.
+1. **The live Devpost page says "95 tests". The correct number is 105.**
+   This line previously said "100 today", which was itself stale and would have
+   had the operator paste a wrong number a second time. Verified 2026-08-03:
+   `pytest -q` exits 0 with exactly 105 passing and 0 failures, and
+   `tools/check_eval_freshness.py` reports "test count consistent across 5 docs:
+   105". Update the story text from `docs/submission/DEVPOST_STORY.md`.
+
+   Note the two are different claims: the freshness gate proves the five DOCS
+   agree with each other, not that the suite passes. Both were run.
 2. **TECHNICAL_BRIEF.pdf** on Devpost still reads 99. Regenerate from the HTML
    and re-upload, or leave it and accept a one-digit mismatch against the repo.
 3. **Raise the B2 caps** for the 08-05 to 08-11 judging window. The Class B cap
    has already been exhausted twice under far lighter load than judging.
 4. **Paste the Genblaze issue links** (#205, #206) into "Additional info", still
    outstanding from the 07-27 list above.
+
+## 2026-08-03 pre-deadline verification (run, not assumed)
+
+Deadline is 2026-08-03 17:00 EDT. The submission itself was filed 2026-07-27, so
+this window is for edits, not for submitting. Everything automatable on the
+"Pre-submit verification" list was executed:
+
+| Check | Result |
+|---|---|
+| `pytest -q` | **exit 0, 105 passed, 0 failures** |
+| `tools/check_eval_freshness.py` | exit 0; 38 pairs, false_auto=0, missed=0, thresholds 0.97/0.85; docs consistent at 105 |
+| `tools/smoke.py https://reprise-murex.vercel.app` | **SMOKE PASSED**, all 10 stages |
+| Live site signed-out | HTTP 200 |
+| GitHub repo public | HTTP 200 |
+| YouTube link | HTTP 303 (youtu.be short-link redirect, expected) |
+| Long dashes in Devpost-bound text | 0 in DEVPOST_STORY.md and SUBMISSION.md |
+
+Smoke confirmed the load-bearing path end to end, not just liveness: exact repeat
+returns REUSE, the reuse carries a serve URL and a proof receipt, and the served
+asset fetches from B2 with a 200. Scoreboard at check time: 100 decisions, 52
+reuses, 30 reviews, 18 generates, 6 accepts, 2.2059 USD booked saved. Budgets
+readable, generation cap 40/day and decision cap 400/day, both with full headroom.
+
+**Still MANUAL and still outstanding** (Devpost re-challenges reCAPTCHA on
+automated edits, and B2 caps live in the Backblaze console):
+
+1. Update the Devpost story text from 95 to **105** tests.
+2. Regenerate and re-upload TECHNICAL_BRIEF.pdf, or accept the digit mismatch.
+3. Raise the B2 caps for the 08-05 to 08-11 judging window. The smoke run above
+   used a little Class B quota; the Class B cap has been exhausted twice before
+   under lighter load than judging will apply.
+4. Paste the Genblaze issue links (#205, #206) into "Additional info".
